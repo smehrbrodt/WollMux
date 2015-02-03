@@ -527,11 +527,8 @@ public class WollMuxFiles
    * 
    * @author Matthias Benkmann (D-III-ITD 5.1)
    */
+ 
   public static DatasourceJoiner getDatasourceJoiner()
-  {
-    return getDatasourceJoiner(WollMuxSingleton.getInstance().isNoConfig());
-  }
-  public static DatasourceJoiner getDatasourceJoiner(boolean noConfig)
   {
     if (!djInitialized)
     {
@@ -577,7 +574,7 @@ public class WollMuxFiles
 
       try
       {
-        if (noConfig)
+        if (null == senderSourceStr)
           senderSourceStr = de.muenchen.allg.itd51.wollmux.NoConfig.NOCONFIG;
         
         datasourceJoiner =
