@@ -62,6 +62,7 @@ import com.sun.star.text.MailMergeType;
 import com.sun.star.text.XDependentTextField;
 import com.sun.star.text.XMailMergeBroadcaster;
 import com.sun.star.text.XMailMergeListener;
+import com.sun.star.text.XParagraphCursor;
 import com.sun.star.text.XTextContent;
 import com.sun.star.text.XTextDocument;
 import com.sun.star.text.XTextFramesSupplier;
@@ -165,9 +166,11 @@ public class OOoBasedMailMerge
 
     String dbName = registerTempDatasouce(dataSource);
 
+    DocStatistics docStat = new DocStatistics();
     File inputFile =
-      createAndAdjustInputFile(tmpDir, pmod.getTextDocument(), dbName);
-
+      createAndAdjustInputFile(tmpDir, pmod.getTextDocument(), dbName, docStat);
+    Logger.debug2(docStat.toString());
+    
     Logger.debug(L.m("Temporäre Datenquelle: %1", dbName));
     if (pmod.isCanceled()) return;
 
@@ -771,16 +774,114 @@ public class OOoBasedMailMerge
     }
 
     /**
-     * Liefert den Wert von {@link #adjustPersistentData}} zurück.
+     * Liefert den Wert von {@link #adjustPersistentData} zurück.
      * 
      * @author Ulrich Kitzinger (GBI I21)
      */
-    public boolean isAdjustMainDoc(){
+    public boolean isAdjustMainDoc()
+    {
       return adjustPersistentData;
     }
   }
 
-  
+  /**
+   * Im Rahmen von trac#14905 wurde in den WollMux ein Workaround zur Umgehung der
+   * 16Bit-Limitierungen in OOo/AOO/LO eingebaut. Dabei werden manche Container in
+   * OOo/AOO/LO noch per 16Bit-adressiert, womit es dann nur 65536 Elemente in diesen
+   * Containern geben kann. Konkret verhält sich LO 4.1.6 so, dass es einfriert, wenn
+   * z.B. ein Hauptdokument 32 Rahmen enthält und 2048 mal in ein Gesamtdokument
+   * geschrieben werden soll. Um dies zu verhindern, erfasst der WollMux in dieser
+   * Klasse vor dem Druckauftrag eine Statistik über das Hauptdokument. So kann durch
+   * Auswertung dieser Statisktik ein Einfrieren des Seriendrucks umgangen werden,
+   * bzw. der Druckauftrag in kleinere Druckaufträge aufgeteilt werden.
+   * 
+   * @author Christoph Lutz (CIB software GmbH)
+   */
+  public static class DocStatistics
+  {
+    private int containedTextframes = 0;
+
+    private int containedSections = 0;
+
+    private int containedPageStyles = 0;
+
+    private int containedTables = 0;
+
+    public int getContainedTextframes()
+    {
+      return containedTextframes;
+    }
+
+    public int getContainedSections()
+    {
+      return containedSections;
+    }
+
+    public int getContainedPageStyles()
+    {
+      return containedPageStyles;
+    }
+
+    public int getContainedTables()
+    {
+      return containedTables;
+    }
+
+    public void countElements(XComponent doc)
+    {
+      // count Sections:
+      XTextSectionsSupplier tss = UNO.XTextSectionsSupplier(doc);
+      if (tss != null)
+      {
+        String[] names = tss.getTextSections().getElementNames();
+        containedSections = names.length;
+      }
+
+      // count TextFrames:
+      XTextFramesSupplier tfs = UNO.XTextFramesSupplier(doc);
+      if (tfs != null)
+      {
+        String[] names = tfs.getTextFrames().getElementNames();
+        containedTextframes = names.length;
+      }
+
+      // count TextTables
+      XTextTablesSupplier tts =
+        UnoRuntime.queryInterface(XTextTablesSupplier.class, doc);
+      if (tts != null)
+      {
+        String[] names = tts.getTextTables().getElementNames();
+        containedTables = names.length;
+      }
+
+      // count (really used) PageStyles
+      try
+      {
+        XTextDocument tdoc = UNO.XTextDocument(doc);
+        XParagraphCursor cursor =
+          UNO.XParagraphCursor(tdoc.getText().createTextCursorByRange(
+            tdoc.getText().getStart()));
+        HashSet<String> usedPageStyles = new HashSet<String>();
+        do
+        {
+          Object pageStyleName = UNO.getProperty(cursor, "PageStyleName");
+          if (pageStyleName != null) usedPageStyles.add(pageStyleName.toString());
+        } while (cursor.gotoNextParagraph(false));
+
+        containedPageStyles = usedPageStyles.size();
+      }
+      catch (java.lang.Exception e)
+      {}
+    }
+    
+    public String toString()
+    {
+      return this.getClass().getName() + "(Textframes=" + containedTextframes
+        + ", Sections=" + containedSections + ", PageStyles=" + containedPageStyles
+        + ", TextTables=" + containedTables + ")";
+    }
+  }
+
   /**
    * Erzeugt das aus origDoc abgeleitete, für den OOo-Seriendruck heranzuziehende
    * Input-Dokument im Verzeichnis tmpDir und nimmt alle notwendigen Anpassungen vor,
@@ -790,7 +891,7 @@ public class OOoBasedMailMerge
    * @author Christoph Lutz (D-III-ITD-D101) TESTED
    */
   private static File createAndAdjustInputFile(File tmpDir, XTextDocument origDoc,
-      String dbName)
+      String dbName, DocStatistics s)
   {
     // Aktuelles Dokument speichern als neues input-Dokument
     if (origDoc == null) return null;
@@ -841,6 +942,12 @@ public class OOoBasedMailMerge
     SachleitendeVerfuegung.deMuxSLVStyles(UNO.XTextDocument(tmpDoc));
     removeWollMuxMetadata(UNO.XTextDocument(tmpDoc));
 
+    // Dokumentstatistik erheben (wenn s != null)
+    if(s != null)
+    {
+      s.countElements(tmpDoc);
+    }
+      
     // neues input-Dokument speichern und schließen
     if (UNO.XStorable(tmpDoc) != null)
     {
@@ -1390,7 +1497,7 @@ public class OOoBasedMailMerge
 
       File inputFile =
         createAndAdjustInputFile(tmpDir,
-          UNO.XTextDocument(UNO.desktop.getCurrentComponent()), dbName);
+          UNO.XTextDocument(UNO.desktop.getCurrentComponent()), dbName, null);
 
       System.out.println("Temporäre Datenquelle: " + dbName);
 
