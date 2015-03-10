@@ -113,28 +113,19 @@ public interface PersistentDataContainer
      * Die dataId unter der die Version des letzten WollMux der das Dokument
      * angefasst hat (vor diesem gerade laufenden) gespeichert wird.
      */
-    TOUCH_WOLLMUXVERSION("WollMuxVersion", true),
+    TOUCH_WOLLMUXVERSION("WollMuxVersion"),
 
     /**
      * Die dataId unter der die Version des letzten OpenOffice,orgs das das Dokument
      * angefasst hat (vor diesem gerade laufenden) gespeichert wird.
      */
-    TOUCH_OOOVERSION("OOoVersion", true);
+    TOUCH_OOOVERSION("OOoVersion");
 
     private String name;
-
-    private boolean infodata;
 
     DataID(String name)
     {
       this.name = name;
-      this.infodata = false;
-    }
-
-    DataID(String name, boolean infodata)
-    {
-      this.name = name;
-      this.infodata = infodata;
     }
 
     /**
@@ -146,18 +137,6 @@ public interface PersistentDataContainer
     public String getDescriptor()
     {
       return name;
-    }
-
-    /**
-     * Gibt Auskunft darüber, ob es sich bei den unter dieser DataID abgelegten Daten
-     * um reine, nicht durch den WollMux interpretierten Infodaten handelt oder
-     * nicht.
-     * 
-     * @author Christoph Lutz (D-III-ITD-D101)
-     */
-    public boolean isInfodata()
-    {
-      return infodata;
     }
   }
 }

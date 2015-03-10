@@ -64,8 +64,10 @@ import com.sun.star.text.XMailMergeBroadcaster;
 import com.sun.star.text.XMailMergeListener;
 import com.sun.star.text.XTextContent;
 import com.sun.star.text.XTextDocument;
+import com.sun.star.text.XTextFramesSupplier;
 import com.sun.star.text.XTextSection;
 import com.sun.star.text.XTextSectionsSupplier;
+import com.sun.star.text.XTextTablesSupplier;
 import com.sun.star.uno.AnyConverter;
 import com.sun.star.uno.UnoRuntime;
 import com.sun.star.uno.XNamingService;
@@ -234,7 +236,14 @@ public class OOoBasedMailMerge
           String unoURL =
             UNO.getParsedUNOUrl(outputFile.toURI().toString()).Complete;
           Logger.debug(L.m("Öffne erzeugtes Gesamtdokument %1", unoURL));
-          UNO.loadComponentFromURL(unoURL, true, false);
+          XComponent resultDoc = UNO.loadComponentFromURL(unoURL, true, false);
+
+          // update LastTouchedByVersionInfo
+          if(UNO.XTextDocument(resultDoc) != null)
+          {
+            TextDocumentModel m = WollMuxSingleton.getInstance().getTextDocumentModel(UNO.XTextDocument(resultDoc));
+            m.updateLastTouchedByVersionInfo();
+          }
         }
         catch (Exception e)
         {
@@ -883,7 +892,7 @@ public class OOoBasedMailMerge
     if (doc == null) return;
     PersistentDataContainer c = PersistentData.createPersistentDataContainer(doc);
     for (DataID dataId : DataID.values())
-      if (!dataId.isInfodata()) c.removeData(dataId);
+      c.removeData(dataId);
     c.flush();
   }
 

@@ -813,6 +813,10 @@ public class PersistentData
     /**
      * Liefert alle Informations-Textfelder mit Id fieldName zurück.
      * 
+     * @param fieldName
+     *          Die "ID" der Annotation (entspricht dem Author-Feld der Annotation)
+     *          nach der gesucht wird. Darf auch null sein, dann werden alle
+     *          Annotationen zurück geliefert.
      * @param create
      *          falls true so werden entsprechende Felder angelegt, wenn sie nicht
      *          existieren.
@@ -892,7 +896,7 @@ public class PersistentData
               String author = (String) UNO.getProperty(textfield, "Author");
               // ACHTUNG! author.equals(fieldName) wäre falsch, da author null sein
               // kann!
-              if (fieldName.equals(author))
+              if ((fieldName == null && author != null) || fieldName.equals(author))
               {
                 textfields.add(textfield);
               }
@@ -1007,6 +1011,30 @@ public class PersistentData
           }
         }
       }
+
+      // Wenn oben die letzte Annotation gelöscht wurde, wollen wir auch den Rahmen
+      // WollMuxDaten löschen
+      textfields = getWollMuxTextFields(null, false, 0);
+      if (textfields.size() == 0)
+      {
+        XTextFramesSupplier supp = UNO.XTextFramesSupplier(doc);
+        if (supp != null)
+        {
+          XNameAccess frameAccess = supp.getTextFrames();
+          XShape frame;
+          if (frameAccess.hasByName(WOLLMUX_FRAME_NAME)) try
+          {
+            frame = UNO.XShape(frameAccess.getByName(WOLLMUX_FRAME_NAME));
+            XText text = doc.getText();
+            text.removeTextContent(UNO.XTextContent(frame));
+          }
+          catch (Exception x)
+          {
+            Logger.error(L.m("Kann den Rahmen WollMuxDaten nicht entfernen"), x);
+          }
+        }
+      }
+      
       UNO.setProperty(doc, RECORD_CHANGES, recordChanges);
       modifiedDataIDs.remove(dataId);
     }
