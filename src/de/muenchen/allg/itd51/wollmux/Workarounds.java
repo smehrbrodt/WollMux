@@ -73,6 +73,8 @@ public class Workarounds
 
   private static String workaround101283 = null;
 
+  private static Boolean workaround89783 = null;
+
   private static Boolean workaround103137 = null;
 
   private static Boolean workaroundToolbarHoverFreeze = null;
@@ -337,6 +339,36 @@ public class Workarounds
     return workaround101283;
   }
 
+  /**
+   * Wegen https://bugs.documentfoundation.org/show_bug.cgi?id=89783 muss der
+   * OOoMailMerge in mehrere Pakete aufgeteilt werden, wenn das
+   * Seriendruck-Hauptdokument viele der im Issue genannten Elemente (z.B. Rahmen,
+   * PageStyles, ...) enthält. Betroffen davon sind alle aktuell bekannten Versionen
+   * von OOo, AOO und LO.
+   * 
+   * @param maxCritElements
+   *          Anzahl des am häufigsten vorkommendes kritischen Elements im
+   *          Seriendruck-Hauptdokument
+   * 
+   * @return Der Rückgabewert dieser Methode beschreibt, wie viele Datensätze zu
+   *         maxCritElements ohne Einfrierer von der aktuell genutzen Office-Version
+   *         verarbeitet werden können.
+   * 
+   * @author Christoph Lutz (CIB software GmbH)
+   */
+  public static int workaroundForTDFIssue89783(int maxCritElements)
+  {
+    if (workaround89783 == null)
+    {
+      Logger.debug(L.m("Workaround für TDF Issue 89783 aktiv."));
+      workaround89783 = true;
+    }
+
+    // Maximalwert des mit 16-Bit adressierbaren Bereichs / maxCritElements - 2
+    // (zu Sicherheit)
+    return ((1<<16) / maxCritElements) - 2;
+  }
+  
   /**
    * Wenn bestimmte Aktionen getätigt werden (z.B. setWindowPosSize()) während der
    * Mauszeiger über einer OOo-Toolbar schwebt, dann friert OOo 3.0 und 3.1 unter
