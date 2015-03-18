@@ -31,31 +31,43 @@
 package de.muenchen.allg.itd51.wollmux.func;
 
 import java.io.File;
-import java.io.FileOutputStream;
-import java.io.PrintStream;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.List;
+import java.util.Map;
 import java.util.Random;
+import java.util.Vector;
 
 import com.sun.star.beans.NamedValue;
 import com.sun.star.beans.PropertyValue;
+import com.sun.star.beans.PropertyVetoException;
 import com.sun.star.beans.UnknownPropertyException;
+import com.sun.star.beans.XPropertyChangeListener;
 import com.sun.star.beans.XPropertySet;
+import com.sun.star.beans.XPropertySetInfo;
+import com.sun.star.beans.XVetoableChangeListener;
 import com.sun.star.container.NoSuchElementException;
 import com.sun.star.container.XEnumeration;
 import com.sun.star.container.XNameAccess;
-import com.sun.star.frame.XModel;
 import com.sun.star.frame.XStorable;
 import com.sun.star.io.IOException;
+import com.sun.star.io.XInputStream;
 import com.sun.star.lang.IllegalArgumentException;
+import com.sun.star.lang.WrappedTargetException;
 import com.sun.star.lang.XComponent;
 import com.sun.star.lang.XMultiServiceFactory;
 import com.sun.star.lang.XSingleServiceFactory;
 import com.sun.star.sdb.CommandType;
-import com.sun.star.sdb.XDocumentDataSource;
+import com.sun.star.sdb.XColumn;
+import com.sun.star.sdbc.DataType;
+import com.sun.star.sdbc.SQLException;
+import com.sun.star.sdbc.XArray;
+import com.sun.star.sdbc.XBlob;
+import com.sun.star.sdbc.XClob;
+import com.sun.star.sdbc.XRef;
+import com.sun.star.sdbc.XResultSet;
+import com.sun.star.sdbcx.XColumnsSupplier;
+import com.sun.star.sdbcx.XRowLocate;
 import com.sun.star.task.XJob;
 import com.sun.star.text.MailMergeEvent;
 import com.sun.star.text.MailMergeType;
@@ -75,7 +87,9 @@ import com.sun.star.uno.Type;
 import com.sun.star.uno.UnoRuntime;
 import com.sun.star.uno.XNamingService;
 import com.sun.star.util.CloseVetoException;
-import com.sun.star.util.URL;
+import com.sun.star.util.Date;
+import com.sun.star.util.DateTime;
+import com.sun.star.util.Time;
 import com.sun.star.util.XCancellable;
 import com.sun.star.view.XPrintable;
 
@@ -100,11 +114,12 @@ import de.muenchen.allg.itd51.wollmux.TextDocumentModel;
 import de.muenchen.allg.itd51.wollmux.WollMuxSingleton;
 import de.muenchen.allg.itd51.wollmux.Workarounds;
 import de.muenchen.allg.itd51.wollmux.XPrintModel;
-import de.muenchen.allg.itd51.wollmux.db.ColumnNotFoundException;
 import de.muenchen.allg.itd51.wollmux.dialog.mailmerge.MailMergeNew;
 
 public class OOoBasedMailMerge
 {
+  private static final String DATA_SOURCE_NAME = "mmdb";
+
   private static final String SEP = ":";
 
   private static final String COLUMN_PREFIX_SINGLE_PARAMETER_FUNCTION = "WM:SP";
@@ -136,22 +151,21 @@ public class OOoBasedMailMerge
     File tmpDir = createMailMergeTempdir();
 
     // Datenquelle mit über mailMergeNewSetFormValue simulierten Daten erstellen
-    OOoDataSource ds = new CsvBasedOOoDataSource(tmpDir);
+    MemoryDataSource ds = new MemoryDataSource();
     try
     {
       MailMergeNew.mailMergeNewSetFormValue(pmod, ds);
       if (pmod.isCanceled()) return;
-      ds.getDataSourceWriter().flushAndClose();
     }
     catch (Exception e)
     {
-      if (ds.getDataSourceWriter().isAdjustMainDoc()){
-        PersistentDataContainer lCont = PersistentData.
-          createPersistentDataContainer(pmod.getTextDocument());
-        lCont.removeData(PersistentDataContainer.DataID.FORMULARWERTE);
-        Logger.debug(
-          L.m("Formularwerte wurden aus %1 gelöscht.", pmod.getTextDocument().getURL()));
-      }
+      // TODO: sollen wir das wirklich machen...
+      PersistentDataContainer lCont =
+        PersistentData.createPersistentDataContainer(pmod.getTextDocument());
+      lCont.removeData(PersistentDataContainer.DataID.FORMULARWERTE);
+      Logger.debug(L.m("Formularwerte wurden aus %1 gelöscht.",
+        pmod.getTextDocument().getURL()));
+      // TODO: ...?
       Logger.error(
         L.m("OOo-Based-MailMerge: kann Simulationsdatenquelle nicht erzeugen!"), e);
       return;
@@ -165,15 +179,12 @@ public class OOoBasedMailMerge
       return;
     }
 
-    XDocumentDataSource dataSource = ds.createXDocumentDatasource();
-    String dbName = registerTempDatasouce(dataSource);
-    Logger.debug(L.m("Temporäre Datenquelle: %1", dbName));
-
     DocStatistics docStat = new DocStatistics();
     File inputFile =
-      createAndAdjustInputFile(tmpDir, pmod.getTextDocument(), dbName, docStat);
+      createAndAdjustInputFile(tmpDir, pmod.getTextDocument(), docStat);
 
-    // Stelle fest, ob der Seriendruck in verschiedene Druckaufträge aufgeteilt werden muss 
+    // Stelle fest, ob der Seriendruck in verschiedene Druckaufträge aufgeteilt
+    // werden muss
     Logger.debug2(L.m("Dokumentstatistik: %1", docStat.toString()));
     int maxCriticalElements = 0;
     if (docStat.getContainedPageStyles() > maxCriticalElements)
@@ -186,33 +197,31 @@ public class OOoBasedMailMerge
       maxCriticalElements = docStat.getContainedTextframes();
     int maxProcessableDatasets =
       Workarounds.workaroundForTDFIssue89783(maxCriticalElements);
-    maxProcessableDatasets = 2;
     if (ds.getSize() > maxProcessableDatasets)
     {
       WollMuxSingleton.showInfoModal(
         L.m("WollMux-Seriendruck Info"),
         L.m(
           "Ihr Seriendruckauftrag ist zu groß für das verwendete Office und wird daher in %1 Einzelaufträge aufgeteilt!",
-          ((ds.getSize() / maxProcessableDatasets) + 1)));
+          (int) Math.ceil((double) ds.getSize() / maxProcessableDatasets)));
     }
 
     // Seriendruck durchführen (ggf. aufgeteilt in mehrere "Päckchen")
     int start = 0, end = maxProcessableDatasets;
-    while(!pmod.isCanceled())
+    while (!pmod.isCanceled())
     {
-      if(end > ds.getSize()) end = ds.getSize();
+      if (end > ds.getSize()) end = ds.getSize();
+      
+      ds.setSelection(start, end);
+      mergeAndShowResult(inputFile, tmpDir, type, pmod, ds, null);
 
-      mergeAndShowResult(inputFile, tmpDir, type, pmod, ds, dbName, start, end);
-
-      start=end;
-      end+=maxProcessableDatasets;
-      if(start >= ds.getSize()) break;
+      start = end;
+      end += maxProcessableDatasets;
+      if (start >= ds.getSize()) break;
     }
 
     // Aufräumen
-    removeTempDatasource(dbName, tmpDir);
-    ds.remove();
-    inputFile.delete();    
+    inputFile.delete();
     tmpDir.delete();
   }
 
@@ -223,19 +232,18 @@ public class OOoBasedMailMerge
    * Ergebnisdokument.
    */
   private static void mergeAndShowResult(File inputFile, File outputDir,
-      OutputType type, final XPrintModel pmod, OOoDataSource ds, String dbName,
-      int start, int end)
+      OutputType type, final XPrintModel pmod, MemoryDataSource ds, String dbName)
   {
     MailMergeThread t = null;
     try
     {
       PrintModels.setStage(
         pmod,
-        (start == 0 && ds.getSize() == end) ? L.m("Gesamtdokument erzeugen")
-                                           : L.m("Gesamtdokumente erzeugen"));
+        (ds.getSize() == ds.getSelectionSize()) ? L.m("Gesamtdokument erzeugen")
+                                               : L.m("Gesamtdokumente erzeugen"));
       ProgressUpdater updater =
         new ProgressUpdater(pmod, (int) Math.ceil((double) ds.getSize()
-          / countNextSets(pmod.getTextDocument())));
+          / countNextSets(pmod.getTextDocument())), ds.getSelectionStart());
 
       // Lese ausgewählten Drucker
       XPrintable xprintSD =
@@ -253,7 +261,7 @@ public class OOoBasedMailMerge
       {
         pNameSD = "unbekannt";
       }
-      t = runMailMerge(dbName, outputDir, inputFile, updater, type, pNameSD, start, end);
+      t = runMailMerge(ds, outputDir, inputFile, updater, type, pNameSD);
     }
     catch (Exception e)
     {
@@ -321,7 +329,7 @@ public class OOoBasedMailMerge
       }
     }
   }
-  
+
   /**
    * A optional XCancellable mail merge thread.
    * 
@@ -370,7 +378,7 @@ public class OOoBasedMailMerge
     {
       if (mailMergeCancellable != null) mailMergeCancellable.cancel();
     }
-  }  
+  }
 
   /**
    * Übernimmt das Aktualisieren der Fortschrittsanzeige im XPrintModel pmod.
@@ -385,13 +393,13 @@ public class OOoBasedMailMerge
 
     public final int maxDatasets;
 
-    public ProgressUpdater(XPrintModel pmod, int maxDatasets)
+    public ProgressUpdater(XPrintModel pmod, int maxDatasets, int currentCount)
     {
       this.pmod = pmod;
-      this.currentCount = 0;
+      this.currentCount = currentCount;
       this.maxDatasets = maxDatasets;
       pmod.setPrintProgressMaxValue((short) maxDatasets);
-      pmod.setPrintProgressValue((short) 0);
+      pmod.setPrintProgressValue((short) currentCount);
     }
 
     public void incrementProgress()
@@ -407,41 +415,52 @@ public class OOoBasedMailMerge
   }
 
   /**
-   * Repräsentiert eine (noch nicht registrierte) Datenquelle für OpenOffice.org.
+   * Implementiert einen SimulationResultsProcessor, der zugleich ein XResultSet, ein
+   * XRowLocate und ein XColumnsSupplier für den OOoMailMerge ist. Dabei werden bei
+   * XRowLocate als Bookmarks Werte vom Typ Integer verwendet, die den Index der
+   * jeweiligen Zeile repräsentieren. Sowohl für Bookmarks, für absolute(index) als
+   * auch den internen Zähler currentPos gilt: 0 repräsentiert den Datensatz vor dem
+   * ersten Datensatz, 1 repräsentiert den ersten Datensatz, getSize() repräsentiert
+   * den letzten existierenden Datensatz und getSize()+1 die Position "afterLast".
    * 
-   * @author Christoph Lutz (D-III-ITD-D101)
+   * Über die Methode setSelection(start, end) kann eine Auswahl festgelegt werden,
+   * die sich auf dsas Verhalten der Methoden aus XResultSet, XRowLocate,
+   * XColumnsSupplier auswirkt. So kann dem MailMerge-Service eine Auswahl
+   * vorgegaukelt werden (das ist notwendig, weil die im MailMerge-Service direkt per
+   * Selection Property setzbare Auswahl nicht korrekt funktioniert).
+   * 
+   * Es gibt einen JUnit-Test zu dieser Klasse!
    */
-  public static abstract class OOoDataSource implements SimulationResultsProcessor
+  public static class MemoryDataSource implements XResultSet, XRowLocate,
+      XColumnsSupplier, SimulationResultsProcessor
   {
-    /**
-     * Liefert das für die Registrierung der OOo-Datenquelle benötigte
-     * {@link XDocumentDataSource}-Objekt zurück.
-     * 
-     * @author Christoph Lutz (D-III-ITD-D101)
-     */
-    abstract public XDocumentDataSource createXDocumentDatasource();
+    private HashMap<String, Integer> schema = null;
+
+    private Vector<MyRow> datasets = new Vector<MyRow>();
+
+    private MyRow emptyRow = new MyRow();
 
     /**
-     * Liefert einen {@link DataSourceWriter} zurück, über den Datensätze in die
-     * Datenquelle geschrieben werden können.
+     * Wenn keine Selection gesetzt ist dann gilt: 0 ist "vor dem ersten Element", 1
+     * ist das erste Element, getSize() ist das letzte Element und der Maximalwert
+     * ist getSize()+1 ("nach dem letzten Element").
      * 
-     * @author Christoph Lutz (D-III-ITD-D101)
+     * Wenn eine Selektion gesetzt ist, dann gitlt: selectionStart ist
+     * "vor dem ersten Element", selectionStart+1 ist das erste Element, selectionEnd
+     * ist das letzte Element und der Maximalwert ist selectionEnd+1
+     * ("nach dem letzten Element").
      */
-    abstract public DataSourceWriter getDataSourceWriter();
+    private int currentPos = 0;
 
     /**
-     * Liefert die Anzahl der Datensätze der Datenquelle zurück.
-     * 
-     * @author Christoph Lutz (D-III-ITD-D101)
+     * Entspricht ersten Element der Selektion, die Zählung beginnt mit 0.
      */
-    abstract public int getSize();
+    private int selectionStart = 0;
 
     /**
-     * Entfernt die Datenquelle
-     * 
-     * @author Christoph Lutz (D-III-ITD-D101)
+     * Entspricht dem Element "nach dem letzen Element der Selektion".
      */
-    abstract public void remove();
+    private int selectionEnd = 0;
 
     /*
      * (non-Javadoc)
@@ -450,6 +469,7 @@ public class OOoBasedMailMerge
      * de.muenchen.allg.itd51.wollmux.SimulationResults.SimulationResultsProcessor
      * #processSimulationResults(de.muenchen.allg.itd51.wollmux.SimulationResults)
      */
+    @Override
     public void processSimulationResults(SimulationResults simRes)
     {
       if (simRes == null) return;
@@ -474,372 +494,580 @@ public class OOoBasedMailMerge
       }
       try
       {
-        getDataSourceWriter().addDataset(data);
+        addDataset(data);
       }
       catch (Exception e)
       {
         Logger.error(e);
       }
     }
-  }
-
-  /**
-   * Implementierung einer {@link OOoDataSource}, die als Backend ein CSV-Datei
-   * verwendet.
-   * 
-   * @author Christoph Lutz (D-III-ITD-D101)
-   */
-  public static class CsvBasedOOoDataSource extends OOoDataSource
-  {
-    File parentDir;
-
-    CSVDataSourceWriter dsw;
 
     /**
-     * Erzeugt eine {@link OOoDataSource}, die als Backend eine CSV-Datei verwendet
-     * und die dafür notwendige Datei (eine .csv-Datei) im Verzeichnis parentDir
-     * ablegt.
+     * Setzt die Selektion, die dem MailMerge-Service vorgegaukelt werden soll; start
+     * entspricht dabei dem ersten Element (wobei die Zählung mit 0 beginnt) und end
+     * dem Element "nach dem letzten Element" der Auswahl.
      */
-    public CsvBasedOOoDataSource(File parentDir)
+    public void setSelection(int start, int end)
     {
-      this.parentDir = parentDir;
-      this.dsw = new CSVDataSourceWriter(parentDir);
+      selectionStart = start;
+      selectionEnd = end;
+      if (selectionStart < 0) selectionStart = 0;
+      if (selectionEnd > getSize()) selectionEnd = getSize();
     }
 
-    /*
-     * (non-Javadoc)
-     * 
-     * @seede.muenchen.allg.itd51.wollmux.func.OOoBasedMailMerge.OOoDataSource#
-     * getDataSourceWriter()
+    /**
+     * Liefert die Start-Position der aktuellen per setSelection(...) gesetzten
+     * Auswahl zurück oder 0, wenn es keine Auswahl gibt.
      */
-    public DataSourceWriter getDataSourceWriter()
+    public int getSelectionStart()
     {
-      return dsw;
+      return selectionStart;
     }
 
-    /*
-     * (non-Javadoc)
-     * 
-     * @seede.muenchen.allg.itd51.wollmux.func.OOoBasedMailMerge.OOoDataSource#
-     * createXDocumentDatasource()
+    /**
+     * Liefert die Größe der aktuell per setSelection(...) gesetzten Auswahl zurück
+     * oder getSize(), wenn es keine Auswahl gibt.
      */
-    public XDocumentDataSource createXDocumentDatasource()
+    public int getSelectionSize()
     {
-      XSingleServiceFactory dbContext =
-        UNO.XSingleServiceFactory(UNO.createUNOService("com.sun.star.sdb.DatabaseContext"));
-      XDocumentDataSource dataSource = null;
-      if (dbContext != null) try
-      {
-        dataSource = UNO.XDocumentDataSource(dbContext.createInstance());
-      }
-      catch (Exception e)
-      {
-        Logger.error(e);
-      }
+      return selectionEnd - selectionStart;
+    }
 
-      if (dataSource != null)
+    /**
+     * Fügt der Datenquelle eine neue Zeile mit den in dataset enthaltenen Daten zu.
+     * Diese Daten werden nicht nur als Referenz übernommen, sondern kopiert. Die
+     * Schlüssel aus dem zuerst hinzugefügten Datensatz bestimmen dabei das Schema
+     * (die verfügbaren Spalten) der Datenquelle, das sich mit weiteren Datensätzen
+     * nicht mehr ändert.
+     */
+    public void addDataset(HashMap<String, String> dataset)
+    {
+      if (schema == null)
       {
-        String dirURL = UNO.getParsedUNOUrl(parentDir.toURI().toString()).Complete;
-        UNO.setProperty(dataSource, "URL", "sdbc:flat:" + dirURL);
-
-        UnoProps p = new UnoProps();
-        p.setPropertyValue("Extension", "csv");
-        p.setPropertyValue("CharSet", "UTF-8");
-        p.setPropertyValue("FixedLength", false);
-        p.setPropertyValue("HeaderLine", true);
-        p.setPropertyValue("FieldDelimiter", ",");
-        p.setPropertyValue("StringDelimiter", "\"");
-        p.setPropertyValue("DecimalDelimiter", ".");
-        p.setPropertyValue("ThousandDelimiter", "");
-        UNO.setProperty(dataSource, "Info", p.getProps());
-
-        XStorable xStorable = UNO.XStorable(dataSource.getDatabaseDocument());
-        XModel model = UNO.XModel(xStorable);
-        URL url = null;
-        File tmpFile = new File(parentDir, DATASOURCE_ODB_FILENAME);
-        url = UNO.getParsedUNOUrl(tmpFile.toURI().toString());
-        if (url != null && xStorable != null && model != null) try
+        schema = new HashMap<String, Integer>();
+        int i = 0;
+        for (Map.Entry<String, String> entry : dataset.entrySet())
         {
-          xStorable.storeAsURL(url.Complete, model.getArgs());
-        }
-        catch (IOException e)
-        {
-          Logger.error(e);
+          schema.put(entry.getKey(), i);
+          ++i;
         }
       }
-      return dataSource;
-
+      datasets.add(new MyRow(dataset, schema));
+      selectionEnd = getSize();
+      if (emptyRow.getElementNames().length == 0 && schema.size() > 0)
+        emptyRow = new MyRow(new HashMap<String, String>(), schema);
     }
 
-    /*
-     * (non-Javadoc)
-     * 
-     * @see
-     * de.muenchen.allg.itd51.wollmux.func.OOoBasedMailMerge.OOoDataSource#getSize()
-     */
-    public int getSize()
-    {
-      return dsw.getSize();
-    }
-
-    /*
-     * (non-Javadoc)
-     * 
-     * @see
-     * de.muenchen.allg.itd51.wollmux.func.OOoBasedMailMerge.OOoDataSource#remove()
-     */
-    public void remove()
-    {
-      dsw.getCSVFile().delete();
-    }
-  }
-
-  /**
-   * Beschreibt einen DataSourceWriter mit dem die Daten des Seriendrucks in eine
-   * Datenquelle geschrieben werden können. Eine konkrete Ableitungen ist der
-   * {@link CSVDataSourceWriter}.
-   * 
-   * @author Christoph Lutz (D-III-ITD-D101)
-   */
-  public static interface DataSourceWriter
-  {
-    /**
-     * Fügt der zu erzeugenden Datenquelle einen neuen Datensatz hinzu durch
-     * Schlüssel/Wert-Paare in einer HashMap definiert ist.
-     * 
-     * @throws Exception
-     *           falls etwas beim Hinzufügen schief geht.
-     * 
-     * @author Christoph Lutz (D-III-ITD-D101)
-     */
-    public void addDataset(HashMap<String, String> ds) throws Exception;
-
-    /**
-     * Nachdem mit {@link #addDataset(HashMap)} alle Datensätze hinzugefügt wurden
-     * schließt der Aufruf dieser Methode die Erzeugung der Datenquelle ab. Nach dem
-     * Aufruf von {@link #flushAndClose()} ist die Erzeugung abgeschlossen und es
-     * darf kein weiterer Aufruf von {@link #addDataset(HashMap)} erfolgen (bzw.
-     * dieser ist dann ohne Wirkung).
-     * 
-     * @throws Exception
-     *           falls etwas beim Finalisieren schief geht.
-     * 
-     * @author Christoph Lutz (D-III-ITD-D101)
-     */
-    public void flushAndClose() throws Exception;
-
-    /**
-     * Liefert die Anzahl der (bisher) mit {@link #addDataset(HashMap)} hinzugefügten
-     * Datensätze zurück.
-     * 
-     * @author Christoph Lutz (D-III-ITD-D101)
-     */
-    public int getSize();
-
-    /**
-     * Entscheidet ob aus den PersistentData der Originaldatei die WollMux-Abschitte
-     * gelöscht werden müssen. 
-     * @return true falls die Abschnitte gelöscht werden müssen, false sonst
-     */
-    public boolean isAdjustMainDoc();
-  }
-
-  /**
-   * Implementiert einen DataSourceWriter, der Daten in eine CSV-Datei data.csv in
-   * einem frei wählbaren Zielverzeichnis schreibt.
-   * 
-   * @author Christoph Lutz (D-III-ITD-D101)
-   */
-  public static class CSVDataSourceWriter implements DataSourceWriter
-  {
-    /**
-     * Enthält die zu erzeugende bzw. erzeugte csv-Datei.
-     */
-    File csvFile = null;
-
-    /**
-     * Sammelt alle über {@link #addDataset(HashMap)} gesetzten Datensätze
-     */
-    ArrayList<HashMap<String, String>> datasets;
-
-    /**
-     * Sammelt die Namen aller über {@link #addDataset(HashMap)} gesetzten Spalten.
-     */
-    HashSet<String> columns;
-
-    /**
-     * Enthält nach einem Aufruf von {@link #getHeaders()} die sortierten Headers.
-     */
-    ArrayList<String> headers = null;
-
-    /**
-     * Wenn {@link #validateColumntHeaders()} Leerzeichen in den Headern findet, 
-     * müssen die PersistentData des Originaldokuments angepasst werden. 
-     */
-    private boolean adjustPersistentData = false;
-
-    /**
-     * Erzeugt einen CSVDataSourceWriter, der die zu erzeugende csv-Datei in
-     * parentDir ablegt.
-     */
-    public CSVDataSourceWriter(File parentDir)
-    {
-      csvFile = new File(parentDir, TABLE_NAME + ".csv");
-      datasets = new ArrayList<HashMap<String, String>>();
-      columns = new HashSet<String>();
-    }
-
-    /*
-     * (non-Javadoc)
-     * 
-     * @see
-     * de.muenchen.allg.itd51.wollmux.func.OOoBasedMailMerge.DataSourceWriter#getSize
-     * ()
-     */
     public int getSize()
     {
       return datasets.size();
     }
 
-    /*
-     * (non-Javadoc)
-     * 
-     * @see
-     * de.muenchen.allg.itd51.wollmux.func.OOoBasedMailMerge.DataSourceWriter#addDataset
-     * (java.util.HashMap)
-     */
-    public void addDataset(HashMap<String, String> ds) throws Exception
+    @Override
+    public int compareBookmarks(Object a, Object b) throws SQLException
     {
-      datasets.add(ds);
-      columns.addAll(ds.keySet());
+      NOT_YET_IMPLEMENTED_OR_REQUIRED(a, b);
+      if (a != null && b != null && a instanceof Integer && b instanceof Integer)
+      {
+        return ((Integer) a).compareTo((Integer) b);
+      }
+      throw new SQLException("Bookmark must be an Integer");
     }
 
-    /*
-     * (non-Javadoc)
-     * 
-     * @seede.muenchen.allg.itd51.wollmux.func.OOoBasedMailMerge.DataSourceWriter#
-     * flushAndClose()
-     */
-    public void flushAndClose() throws Exception
+    @Override
+    public Object getBookmark() throws SQLException
     {
-      validateColumnHeaders();
+      NOT_YET_IMPLEMENTED_OR_REQUIRED();
+      return Integer.valueOf(currentPos);
+    }
 
-      FileOutputStream fos = new FileOutputStream(csvFile);
-      PrintStream p = new PrintStream(fos, true, "UTF-8");
-      p.print(line(getHeaders()));
-      for (HashMap<String, String> ds : datasets)
+    @Override
+    public boolean hasOrderedBookmarks() throws SQLException
+    {
+      NOT_YET_IMPLEMENTED_OR_REQUIRED();
+      return true;
+    }
+
+    @Override
+    public int hashBookmark(Object bookmark) throws SQLException
+    {
+      NOT_YET_IMPLEMENTED_OR_REQUIRED();
+      return bookmark.hashCode();
+    }
+
+    /**
+     * Setzt die aktuelle Position um offset relativ zur Position von bookmark. Wird
+     * auf die Positionen "beforeFirstRow" (selectionStart), bzw. "afterLastRow"
+     * (selectionEnd + 1) gesetzt, liefert die Funktion false, setzt aber die
+     * Position um. In allen anderen ungültigen Fällen verhindert sie einen Setzen in
+     * den negativen Bereich bzw. in den Bereich über getSize()+1 und liefert false
+     * zurück.
+     */
+    private boolean setPosRelativeToBookmark(Object bookmark, int offset)
+    {
+      if (bookmark != null && bookmark instanceof Integer)
       {
-        ArrayList<String> entries = new ArrayList<String>();
-        for (String key : getHeaders())
+        int newPos = selectionStart + ((Integer) bookmark) + offset;
+        if (newPos <= selectionStart)
         {
-          String val = ds.get(key);
-          if (val == null) val = "";
-          entries.add(val);
+          currentPos = selectionStart;
+          return false;
         }
-        p.print(line(entries));
-      }
-      p.close();
-    }
-
-    /**
-     * Überprüft ob die Headerzeilen der Datenquelle gültig sind, 
-     * dh. keine Zeilenumbrüche enthalten. Wenn Zeilenumbrüche gefunden
-     * werden, wird eine entsprechende Meldung angezeigt.
-     * @throws ColumnNotFoundException Falls die Datenquelle in der
-     * Headerzeile mindestens 1 Spalte mit Zeilenumbruch enthält.
-     */
-    private void validateColumnHeaders() throws ColumnNotFoundException
-    {
-      Logger.debug(L.m("validateColumnHeaders()"));
-      String invalidHeaders = "";
-      for (String key : getHeaders())
-      {
-        if (key.contains("\n"))
+        else if (newPos > selectionEnd)
         {
-          invalidHeaders += "• " + key + "\n";
+          currentPos = selectionEnd + 1;
+          return false;
         }
+        else
+          currentPos = newPos;
+        return true;
       }
-      if (!invalidHeaders.isEmpty())
+      return false;
+    }
+
+    public boolean moveRelativeToBookmark(Object bookmark, int offset)
+        throws SQLException
+    {
+      NOT_YET_IMPLEMENTED_OR_REQUIRED(bookmark, offset);
+      return setPosRelativeToBookmark(bookmark, offset);
+    }
+
+    @Override
+    public boolean moveToBookmark(Object bookmark) throws SQLException
+    {
+      NOT_YET_IMPLEMENTED_OR_REQUIRED(bookmark);
+      return setPosRelativeToBookmark(bookmark, 0);
+    }
+
+    @Override
+    public boolean absolute(int id) throws SQLException
+    {
+      if (id < 0)
+        return setPosRelativeToBookmark(Integer.valueOf(getSelectionSize() + 1), id);
+      else
+        return setPosRelativeToBookmark(Integer.valueOf(0), id);
+    }
+
+    @Override
+    public void afterLast() throws SQLException
+    {
+      currentPos = selectionEnd + 1;
+    }
+
+    @Override
+    public void beforeFirst() throws SQLException
+    {
+      currentPos = selectionStart;
+    }
+
+    @Override
+    public boolean first() throws SQLException
+    {
+      return absolute(1);
+    }
+
+    @Override
+    public int getRow() throws SQLException
+    {
+      return currentPos - selectionStart;
+    }
+
+    @Override
+    public Object getStatement() throws SQLException
+    {
+      NOT_YET_IMPLEMENTED_OR_REQUIRED();
+      return Any.VOID;
+    }
+
+    @Override
+    public boolean isAfterLast() throws SQLException
+    {
+      return currentPos == selectionEnd + 1;
+    }
+
+    @Override
+    public boolean isBeforeFirst() throws SQLException
+    {
+      NOT_YET_IMPLEMENTED_OR_REQUIRED();
+      return currentPos == selectionStart;
+    }
+
+    @Override
+    public boolean isFirst() throws SQLException
+    {
+      NOT_YET_IMPLEMENTED_OR_REQUIRED();
+      return currentPos == selectionStart + 1;
+    }
+
+    @Override
+    public boolean isLast() throws SQLException
+    {
+      NOT_YET_IMPLEMENTED_OR_REQUIRED();
+      return currentPos == selectionEnd;
+    }
+
+    @Override
+    public boolean last() throws SQLException
+    {
+      return absolute(-1);
+    }
+
+    @Override
+    public boolean next() throws SQLException
+    {
+      return setPosRelativeToBookmark(Integer.valueOf(currentPos - selectionStart),
+        1);
+    }
+
+    @Override
+    public boolean previous() throws SQLException
+    {
+      return setPosRelativeToBookmark(Integer.valueOf(currentPos - selectionStart),
+        -1);
+    }
+
+    @Override
+    public void refreshRow() throws SQLException
+    {
+      NOT_YET_IMPLEMENTED_OR_REQUIRED();
+    }
+
+    @Override
+    public boolean relative(int offset) throws SQLException
+    {
+      NOT_YET_IMPLEMENTED_OR_REQUIRED(offset);
+      return setPosRelativeToBookmark(Integer.valueOf(currentPos - selectionStart),
+        offset);
+    }
+
+    @Override
+    public boolean rowDeleted() throws SQLException
+    {
+      NOT_YET_IMPLEMENTED_OR_REQUIRED();
+      return false;
+    }
+
+    @Override
+    public boolean rowInserted() throws SQLException
+    {
+      NOT_YET_IMPLEMENTED_OR_REQUIRED();
+      return false;
+    }
+
+    @Override
+    public boolean rowUpdated() throws SQLException
+    {
+      NOT_YET_IMPLEMENTED_OR_REQUIRED();
+      return false;
+    }
+
+    @Override
+    public XNameAccess getColumns()
+    {
+      if (currentPos > selectionStart && currentPos <= selectionEnd)
       {
-        boolean anpassen = WollMuxSingleton.showQuestionModal(
-          L.m("WollMux-Seriendruck"),
-          L.m("Zeilenumbrüche in Spaltenüberschriften sind für den Seriendruck nicht erlaubt.\n")
-            + L.m("\nBitte entfernen Sie die Zeilenumbrüche aus den folgenden Überschriften der Datenquelle:\n\n")
-            + invalidHeaders 
-            + L.m("\nSoll das Hauptdokument entsprechend angepasst werden?"));
-          
-          
-        if (anpassen){
-          adjustPersistentData = true;
-        }
-        throw new ColumnNotFoundException(
-          L.m("Spaltenüberschriften enthalten newlines"));
+        return datasets.get(currentPos - 1);
       }
+      return emptyRow;
     }
+  }
+
+  public static class MyRow implements XNameAccess
+  {
+    private String[] data;
+
+    private HashMap<String, Integer> schema;
 
     /**
-     * Erzeugt die zu dem durch list repräsentierten Datensatz zugehörige
-     * vollständige Textzeile für die csv-Datei.
-     * 
-     * @author Christoph Lutz (D-III-ITD-D101)
+     * Erzeugt eine leere Row ohne Spalten.
      */
-    private String line(List<String> list)
+    MyRow()
     {
-      StringBuffer buf = new StringBuffer();
-      for (String el : list)
+      this.data = new String[] {};
+      this.schema = new HashMap<String, Integer>();
+    }
+    
+    MyRow(HashMap<String, String> dataset, HashMap<String, Integer> schema)
+    {
+      this.schema = schema;
+      this.data = new String[schema.size()];
+      for (Map.Entry<String, Integer> entry : schema.entrySet())
       {
-        if (buf.length() != 0) buf.append(",");
-        buf.append(literal(el));
+        data[entry.getValue()] = dataset.get(entry.getKey());
       }
-      buf.append("\n");
-      return buf.toString();
     }
 
-    /**
-     * Erzeugt ein für die csv-Datei gültiges literal aus dem Wert value und
-     * übernimmt insbesondere das Escaping der Anführungszeichen.
-     * 
-     * @author Christoph Lutz (D-III-ITD-D101)
-     */
-    private String literal(String value)
+    @Override
+    public boolean hasElements()
     {
-      String esc = value.replaceAll("\"", "\"\"");
-      return "\"" + esc + "\"";
+      NOT_YET_IMPLEMENTED_OR_REQUIRED();
+      return schema.size() > 0;
     }
 
-    /**
-     * Liefert eine alphabetisch sortierte Liste alle Spaltennamen zurück, die jemals
-     * über {@link #addDataset(HashMap)} benutzt bzw. gesetzt wurden.
-     * 
-     * @author Christoph Lutz (D-III-ITD-D101)
-     */
-    private ArrayList<String> getHeaders()
+    @Override
+    public Type getElementType()
     {
-      if (headers != null) return headers;
-      headers = new ArrayList<String>(columns);
-      Collections.sort(headers);
-      return headers;
+      NOT_YET_IMPLEMENTED_OR_REQUIRED();
+      return Type.ANY;
     }
 
-    /**
-     * Liefert das File-Objekt der csv-Datei zurück, in die geschrieben wird/wurde.
-     * 
-     * @author Christoph Lutz (D-III-ITD-D101)
-     */
-    public File getCSVFile()
+    @Override
+    public boolean hasByName(String columnName)
     {
-      return csvFile;
+      return schema.containsKey(columnName);
     }
 
-    /**
-     * Liefert den Wert von {@link #adjustPersistentData} zurück.
-     * 
-     * @author Ulrich Kitzinger (GBI I21)
-     */
-    public boolean isAdjustMainDoc()
+    @Override
+    public String[] getElementNames()
     {
-      return adjustPersistentData;
+      String[] names = new String[0];
+      names = new String[schema.size()];
+      schema.keySet().toArray(names);
+      return names;
     }
+
+    @Override
+    public Object getByName(String columnName) throws NoSuchElementException,
+        WrappedTargetException
+    {
+      Integer index = schema.get(columnName);
+      if (index == null) throw new NoSuchElementException(columnName);
+      String value = data[index];
+      if (value == null) value = "";
+      return new MyColumn(value);
+    }
+  }
+
+  public static class MyColumn implements XColumn, XPropertySet
+  {
+    private String value;
+
+    public MyColumn(String value)
+    {
+      this.value = value;
+    }
+
+    @Override
+    public Object getPropertyValue(String name) throws UnknownPropertyException,
+        WrappedTargetException
+    {
+      if ("Type".equalsIgnoreCase(name))
+        return DataType.VARCHAR;
+      else
+      {
+        NOT_YET_IMPLEMENTED_OR_REQUIRED(name);
+        throw new UnknownPropertyException(name);
+      }
+    }
+
+    @Override
+    public String getString() throws SQLException
+    {
+      return value;
+    }
+
+    // *****************************************************************************
+    // Jetzt kommen alle nicht implementierten Methoden. Wir müssen sie auch nicht
+    // implementieren, da sie durch obige Rahmenbedingungen (DataType.VARCHAR) nicht
+    // aufgerufen werden.
+
+    @Override
+    public void setPropertyValue(String arg0, Object arg1)
+        throws UnknownPropertyException, PropertyVetoException,
+        IllegalArgumentException, WrappedTargetException
+    {
+      NOT_YET_IMPLEMENTED_OR_REQUIRED(arg0, arg1);
+    }
+
+    @Override
+    public void removeVetoableChangeListener(String arg0,
+        XVetoableChangeListener arg1) throws UnknownPropertyException,
+        WrappedTargetException
+    {
+      NOT_YET_IMPLEMENTED_OR_REQUIRED(arg0, arg1);
+    }
+
+    @Override
+    public void removePropertyChangeListener(String arg0,
+        XPropertyChangeListener arg1) throws UnknownPropertyException,
+        WrappedTargetException
+    {
+      NOT_YET_IMPLEMENTED_OR_REQUIRED(arg0, arg1);
+    }
+
+    @Override
+    public XPropertySetInfo getPropertySetInfo()
+    {
+      NOT_YET_IMPLEMENTED_OR_REQUIRED();
+      return null;
+    }
+
+    @Override
+    public void addVetoableChangeListener(String arg0, XVetoableChangeListener arg1)
+        throws UnknownPropertyException, WrappedTargetException
+    {
+      NOT_YET_IMPLEMENTED_OR_REQUIRED(arg0, arg1);
+    }
+
+    @Override
+    public void addPropertyChangeListener(String arg0, XPropertyChangeListener arg1)
+        throws UnknownPropertyException, WrappedTargetException
+    {
+      NOT_YET_IMPLEMENTED_OR_REQUIRED(arg0, arg1);
+    }
+
+    @Override
+    public XArray getArray() throws SQLException
+    {
+      NOT_YET_IMPLEMENTED_OR_REQUIRED();
+      return null;
+    }
+
+    @Override
+    public XInputStream getBinaryStream() throws SQLException
+    {
+      NOT_YET_IMPLEMENTED_OR_REQUIRED();
+      return null;
+    }
+
+    @Override
+    public XBlob getBlob() throws SQLException
+    {
+      NOT_YET_IMPLEMENTED_OR_REQUIRED();
+      return null;
+    }
+
+    @Override
+    public boolean getBoolean() throws SQLException
+    {
+      NOT_YET_IMPLEMENTED_OR_REQUIRED();
+      return false;
+    }
+
+    @Override
+    public byte getByte() throws SQLException
+    {
+      NOT_YET_IMPLEMENTED_OR_REQUIRED();
+      return 0;
+    }
+
+    @Override
+    public byte[] getBytes() throws SQLException
+    {
+      NOT_YET_IMPLEMENTED_OR_REQUIRED();
+      return null;
+    }
+
+    @Override
+    public XInputStream getCharacterStream() throws SQLException
+    {
+      NOT_YET_IMPLEMENTED_OR_REQUIRED();
+      return null;
+    }
+
+    @Override
+    public XClob getClob() throws SQLException
+    {
+      NOT_YET_IMPLEMENTED_OR_REQUIRED();
+      return null;
+    }
+
+    @Override
+    public Date getDate() throws SQLException
+    {
+      NOT_YET_IMPLEMENTED_OR_REQUIRED();
+      return null;
+    }
+
+    @Override
+    public double getDouble() throws SQLException
+    {
+      NOT_YET_IMPLEMENTED_OR_REQUIRED();
+      return 0;
+    }
+
+    @Override
+    public float getFloat() throws SQLException
+    {
+      NOT_YET_IMPLEMENTED_OR_REQUIRED();
+      return 0;
+    }
+
+    @Override
+    public int getInt() throws SQLException
+    {
+      NOT_YET_IMPLEMENTED_OR_REQUIRED();
+      return 0;
+    }
+
+    @Override
+    public long getLong() throws SQLException
+    {
+      NOT_YET_IMPLEMENTED_OR_REQUIRED();
+      return 0;
+    }
+
+    @Override
+    public Object getObject(XNameAccess arg0) throws SQLException
+    {
+      NOT_YET_IMPLEMENTED_OR_REQUIRED(arg0);
+      return null;
+    }
+
+    @Override
+    public XRef getRef() throws SQLException
+    {
+      NOT_YET_IMPLEMENTED_OR_REQUIRED();
+      return null;
+    }
+
+    @Override
+    public short getShort() throws SQLException
+    {
+      NOT_YET_IMPLEMENTED_OR_REQUIRED();
+      return 0;
+    }
+
+    @Override
+    public Time getTime() throws SQLException
+    {
+      NOT_YET_IMPLEMENTED_OR_REQUIRED();
+      return null;
+    }
+
+    @Override
+    public DateTime getTimestamp() throws SQLException
+    {
+      NOT_YET_IMPLEMENTED_OR_REQUIRED();
+      return null;
+    }
+
+    @Override
+    public boolean wasNull() throws SQLException
+    {
+      NOT_YET_IMPLEMENTED_OR_REQUIRED();
+      return false;
+    }
+  };
+
+  private static void NOT_YET_IMPLEMENTED_OR_REQUIRED(Object... args)
+  {
+    StackTraceElement[] st = Thread.currentThread().getStackTrace();
+    StringBuffer buf = new StringBuffer();
+    if (st.length >= 3)
+    {
+      buf.append(st[3]);
+      for (Object arg : args)
+      {
+        if (buf.length() == 0)
+          buf.append(", args=");
+        else
+          buf.append(", ");
+        buf.append("'" + arg + "'");
+      }
+    }
+    Logger.error(L.m("Aufruf einer nicht implementierten Funktion: %1",
+      buf.toString()));
   }
 
   /**
@@ -931,7 +1159,7 @@ public class OOoBasedMailMerge
       catch (java.lang.Exception e)
       {}
     }
-    
+
     public String toString()
     {
       return this.getClass().getName() + "(Textframes=" + containedTextframes
@@ -949,7 +1177,7 @@ public class OOoBasedMailMerge
    * @author Christoph Lutz (D-III-ITD-D101) TESTED
    */
   private static File createAndAdjustInputFile(File tmpDir, XTextDocument origDoc,
-      String dbName, DocStatistics s)
+      DocStatistics s)
   {
     // Aktuelles Dokument speichern als neues input-Dokument
     if (origDoc == null) return null;
@@ -993,19 +1221,20 @@ public class OOoBasedMailMerge
     }
 
     // neues input-Dokument bearbeiten/anpassen
-    addDatabaseFieldsForInsertFormValueBookmarks(UNO.XTextDocument(tmpDoc), dbName);
-    adjustDatabaseAndInputUserFields(tmpDoc, dbName);
+    addDatabaseFieldsForInsertFormValueBookmarks(UNO.XTextDocument(tmpDoc),
+      DATA_SOURCE_NAME);
+    adjustDatabaseAndInputUserFields(tmpDoc, DATA_SOURCE_NAME);
     removeAllBookmarks(tmpDoc);
     removeHiddenSections(tmpDoc);
     SachleitendeVerfuegung.deMuxSLVStyles(UNO.XTextDocument(tmpDoc));
     removeWollMuxMetadata(UNO.XTextDocument(tmpDoc));
 
     // Dokumentstatistik erheben (wenn s != null)
-    if(s != null)
+    if (s != null)
     {
       s.countElements(tmpDoc);
     }
-      
+
     // neues input-Dokument speichern und schließen
     if (UNO.XStorable(tmpDoc) != null)
     {
@@ -1383,39 +1612,6 @@ public class OOoBasedMailMerge
   }
 
   /**
-   * Registriert die {@link XDocumentDataSource} dataSource mit einem neuen
-   * Zufallsnamen in OOo (so, dass sie z.B. in der Liste der Datenbanken unter
-   * Tools->Extras->Optionen->Base/Datenbanken auftaucht) und gibt den Zufallsnamen
-   * zurück.
-   * 
-   * @author Christoph Lutz (D-III-ITD-D101)
-   */
-  private static String registerTempDatasouce(XDocumentDataSource dataSource)
-  {
-    // neuen Zufallsnamen für Datenquelle bestimmen
-    XSingleServiceFactory dbContext =
-      UNO.XSingleServiceFactory(UNO.createUNOService("com.sun.star.sdb.DatabaseContext"));
-    String name = null;
-    XNameAccess nameAccess = UNO.XNameAccess(dbContext);
-    if (nameAccess != null) do
-    {
-      name = TEMP_WOLLMUX_MAILMERGE_PREFIX + new Random().nextInt(100000);
-    } while (nameAccess.hasByName(name));
-
-    // Datenquelle registrieren
-    if (name != null && UNO.XNamingService(dbContext) != null) try
-    {
-      UNO.XNamingService(dbContext).registerObject(name, dataSource);
-    }
-    catch (Exception e)
-    {
-      Logger.error(e);
-    }
-
-    return name;
-  }
-
-  /**
    * Steuert den Ausgabetyp beim OOo-Seriendruck.
    * 
    * @author Christoph Lutz (D-III-ITD-D101)
@@ -1445,9 +1641,9 @@ public class OOoBasedMailMerge
    * 
    * @author Christoph Lutz (D-III-ITD-D101)
    */
-  private static MailMergeThread runMailMerge(String dbName, final File outputDir,
-      File inputFile, final ProgressUpdater progress, final OutputType type,
-      String printerName, int start, int end) throws Exception
+  private static MailMergeThread runMailMerge(final MemoryDataSource ds,
+      final File outputDir, File inputFile, final ProgressUpdater progress,
+      final OutputType type, String printerName) throws Exception
   {
     final XJob mailMerge =
       (XJob) UnoRuntime.queryInterface(XJob.class,
@@ -1470,23 +1666,16 @@ public class OOoBasedMailMerge
         count++;
         Logger.debug2(L.m("OOo-MailMerger: verarbeite Datensatz %1 (%2 ms)", count,
           (System.currentTimeMillis() - start)));
-        if (count >= progress.maxDatasets && type == OutputType.toPrinter) {
+        if (count >= progress.maxDatasets && type == OutputType.toPrinter)
+        {
           progress.setMessage(L.m("Sende Druckauftrag - bitte warten..."));
         }
       }
     });
 
-    // Selection (Elemente zwischen start und end) zusammen stellen
-    Any[] selection = new Any[end-start];
-    for(int i=0; i<(end-start); ++i)
-    {
-      selection[i] = new Any(Type.UNSIGNED_LONG, Integer.valueOf(start + i + 1));
-    }   
-    // TODO: IllegalArgumentException: The current 'Selection' does not describe a valid array of bookmarks, relative to the current 'ResultSet'.
-    
     final ArrayList<NamedValue> mmProps = new ArrayList<NamedValue>();
-    mmProps.add(new NamedValue("DataSourceName", dbName));
-    mmProps.add(new NamedValue("Selection", selection));
+    mmProps.add(new NamedValue("ResultSet", ds));
+    mmProps.add(new NamedValue("DataSourceName", DATA_SOURCE_NAME));
     mmProps.add(new NamedValue("CommandType", CommandType.TABLE));
     mmProps.add(new NamedValue("Command", TABLE_NAME));
     mmProps.add(new NamedValue("DocumentURL",
@@ -1504,7 +1693,7 @@ public class OOoBasedMailMerge
     {
       mmProps.add(new NamedValue("OutputType", MailMergeType.PRINTER));
       mmProps.add(new NamedValue("SinglePrintJobs", Boolean.FALSE));
-      //jgm,07.2013: setze ausgewaehlten Drucker
+      // jgm,07.2013: setze ausgewaehlten Drucker
       if (printerName != null && printerName.length() > 0)
       {
         PropertyValue[] printOpts = new PropertyValue[1];
@@ -1514,7 +1703,7 @@ public class OOoBasedMailMerge
         Logger.debug(L.m("Seriendruck - Setze Drucker: %1", printerName));
         mmProps.add(new NamedValue("PrintOptions", printOpts));
       }
-      //jgm ende
+      // jgm ende
     }
     MailMergeThread t = new MailMergeThread(mailMerge, outputDir, mmProps);
     t.start();
@@ -1550,27 +1739,22 @@ public class OOoBasedMailMerge
    */
   public static void main(String[] args)
   {
-    String pNameSD="HP1010"; //Drucker Name
+    String pNameSD = "HP1010"; // Drucker Name
     try
     {
       UNO.init();
 
       File tmpDir = createMailMergeTempdir();
 
-      OOoDataSource ds = new CsvBasedOOoDataSource(tmpDir);
-      XDocumentDataSource dataSource = ds.createXDocumentDatasource();
-
-      String dbName = registerTempDatasouce(dataSource);
+      MemoryDataSource ds = new MemoryDataSource();
 
       File inputFile =
         createAndAdjustInputFile(tmpDir,
-          UNO.XTextDocument(UNO.desktop.getCurrentComponent()), dbName, null);
+          UNO.XTextDocument(UNO.desktop.getCurrentComponent()), null);
 
-      System.out.println("Temporäre Datenquelle: " + dbName);
+      runMailMerge(ds, tmpDir, inputFile, null, OutputType.toFile, pNameSD);
 
-      runMailMerge(dbName, tmpDir, inputFile, null, OutputType.toFile, pNameSD, 0, ds.getSize());
-
-      removeTempDatasource(dbName, tmpDir);
+      removeTempDatasource(null, tmpDir);
 
       inputFile.delete();
 

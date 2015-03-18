@@ -7,6 +7,7 @@ idl/de/muenchen/allg/itd51/wollmux/*.class
 bin/de
 bin/data
 bin/com
+bin-test
 dist/deb/wollmux-*.tar.gz
 dist/deb/wollmux_*.orig.tar.gz
 dist/deb/openoffice.org-wollmux_*.deb
