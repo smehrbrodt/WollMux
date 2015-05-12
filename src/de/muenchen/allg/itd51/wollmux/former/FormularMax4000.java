@@ -566,6 +566,17 @@ public class FormularMax4000
   }
 
   /**
+   * Liefert den {@link ViewVisibilityDescriptor}, der die Sichtbarkeit vom die
+   * Attribute beschreibt.
+   *
+   * @author Simona Loi (I23)
+   */
+  public ViewVisibilityDescriptor getViewVisibilityDescriptor()
+  {
+    return viewVisibilityDescriptor;
+  }
+
+  /**
    * Startet eine Instanz des FormularMax 4000 für das Dokument des
    * TextDocumentModels model.
    * 
