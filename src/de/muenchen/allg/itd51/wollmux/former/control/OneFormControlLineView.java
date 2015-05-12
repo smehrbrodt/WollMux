@@ -24,6 +24,7 @@
  * 29.08.2006 | BNK | Erstellung
  * 19.07.2007 | BNK | [R5406]Teile der View können nach Benutzerwunsch ein- oder ausgeblendet werden
  * 23.03.2010 | ERT | [R5721]Unterstützung für Shift-Klick
+ * 12.05.2015 | SL  | [15420]vieVisibility von "Ansicht" Menu gelesen
  * -------------------------------------------------------------------
  *
  * @author Matthias Benkmann (D-III-ITD 5.1)
@@ -142,12 +143,6 @@ public class OneFormControlLineView extends LineView
   private Font boldFont;
 
   /**
-   * Gibt an, welche Teile dieser View eingeblendet werden sollen. null bedeutet,
-   * dass alle Teile angezeigt werden sollen.
-   */
-  private ViewVisibilityDescriptor viewVisibilityDescriptor = null;
-
-  /**
    * Erzeugt eine View für model.
    * 
    * @param bigDaddy
@@ -182,42 +177,34 @@ public class OneFormControlLineView extends LineView
   /**
    * Setzt den {@link ViewVisibilityDescriptor}, der bestimmt, welche Teile dieser
    * View angezeigt werden. ACHTUNG! Das Objekt wird als Referenz gemerkt (jedoch nie
-   * durch diese Klasse geändert). Wird null übergeben, so wird für alles true
-   * angenommen.
+   * durch diese Klasse geändert).
    * 
    * @author Matthias Benkmann (D-III-ITD 5.1)
    */
   public void setViewVisibilityDescriptor(ViewVisibilityDescriptor desc)
   {
-    viewVisibilityDescriptor = desc;
+    desc = formularMax4000.getViewVisibilityDescriptor();
     setViewVisibility();
   }
 
   private void setViewVisibility()
   {
-    /*
-     * ACHTUNG! viewVisibilityDescriptor kann null sein!! Dies wird als alles true
-     * interpretiert.
-     */
-
-    idTextfield.setVisible(model.isTab() || viewVisibilityDescriptor == null
-      || viewVisibilityDescriptor.formControlLineViewId);
-    labelTextfield.setVisible(model.isTab() || viewVisibilityDescriptor == null
-      || viewVisibilityDescriptor.formControlLineViewLabel);
+    idTextfield.setVisible(model.isTab() || formularMax4000.getViewVisibilityDescriptor().formControlLineViewId);
+    labelTextfield.setVisible(model.isTab() || formularMax4000.getViewVisibilityDescriptor().formControlLineViewLabel);
     typeView.setVisible(!model.isTab()
-      && (viewVisibilityDescriptor == null || viewVisibilityDescriptor.formControlLineViewType));
+      && (formularMax4000.getViewVisibilityDescriptor().formControlLineViewType));
     comboBoxAdditionalView.setVisible(model.isCombo()
-      && (viewVisibilityDescriptor == null || viewVisibilityDescriptor.formControlLineViewAdditional));
+      && (formularMax4000.getViewVisibilityDescriptor().formControlLineViewAdditional));
     textAreaAdditionalView.setVisible(model.isTextArea()
-      && (viewVisibilityDescriptor == null || viewVisibilityDescriptor.formControlLineViewAdditional));
+      && formularMax4000.getViewVisibilityDescriptor().formControlLineViewAdditional);
+
     /*
      * Wenn alle abgeschaltet sind, aktiviere zumindest das ID-Feld
      */
-    if (viewVisibilityDescriptor != null
-      && !viewVisibilityDescriptor.formControlLineViewAdditional
-      && !viewVisibilityDescriptor.formControlLineViewId
-      && !viewVisibilityDescriptor.formControlLineViewLabel
-      && !viewVisibilityDescriptor.formControlLineViewType)
+      if (!formularMax4000.getViewVisibilityDescriptor().formControlLineViewAdditional
+      && !formularMax4000.getViewVisibilityDescriptor().formControlLineViewId
+      && !formularMax4000.getViewVisibilityDescriptor().formControlLineViewLabel
+      && !formularMax4000.getViewVisibilityDescriptor().formControlLineViewType)
     {
       idTextfield.setVisible(true);
     }
