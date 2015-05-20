@@ -208,7 +208,7 @@ public class OneFormControlLineView extends LineView
   {
     idTextfield.setVisible(model.isTab() || formularMax4000.getViewVisibilityDescriptor().formControlLineViewId);
     labelTextfield.setVisible(model.isTab() || formularMax4000.getViewVisibilityDescriptor().formControlLineViewLabel);
-    tipTextfield.setVisible(!model.isTab() || formularMax4000.getViewVisibilityDescriptor().formControlLineViewTooltip);
+    tipTextfield.setVisible(!model.isTab() && formularMax4000.getViewVisibilityDescriptor().formControlLineViewTooltip);
     typeView.setVisible(!model.isTab()
       && (formularMax4000.getViewVisibilityDescriptor().formControlLineViewType));
     comboBoxAdditionalView.setVisible(model.isCombo()
