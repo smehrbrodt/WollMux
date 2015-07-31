@@ -58,7 +58,7 @@ Section ""
   ;; get command line parameters
   ${GetParameters} $R1
   
-  StrCpy $0 '"$R0" -Xrs -jar "${JAR_FILE}" $R1' ;;TODO: -Xrs was added because of Java 6 bug which prevented clean Windows shutdown; can probably be removed later
+  StrCpy $0 '"$R0" -Xrs -Dsun.java2d.noddraw=true -jar "${JAR_FILE}" $R1' ;;TODO: -Xrs was added because of Java 6 bug which prevented clean Windows shutdown; can probably be removed later
  
   SetOutPath $EXEDIR
   Exec $0
