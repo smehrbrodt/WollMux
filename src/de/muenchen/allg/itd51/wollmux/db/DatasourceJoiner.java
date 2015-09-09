@@ -73,8 +73,6 @@ import de.muenchen.allg.itd51.wollmux.L;
 import de.muenchen.allg.itd51.wollmux.Logger;
 import de.muenchen.allg.itd51.wollmux.TimeoutException;
 import de.muenchen.allg.itd51.wollmux.WollMuxFiles;
-import de.muenchen.allg.itd51.wollmux.WollMuxSingleton;
-import de.muenchen.allg.itd51.wollmux.db.DummyDatasourceWithMessagebox;
 
 /**
  * Stellt eine virtuelle Datenbank zur Verfügung, die ihre Daten aus verschiedenen
