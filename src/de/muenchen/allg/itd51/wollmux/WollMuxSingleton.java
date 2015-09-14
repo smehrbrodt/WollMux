@@ -491,7 +491,14 @@ public class WollMuxSingleton implements XPALProvider
     }
     catch (NodeNotFoundException e)
     {
-      return L.m("unbekannt");
+      if (noConfig != null && noConfig.isNoConfig())
+      {
+        return L.m("keine geladen");
+      } 
+      else
+      {
+        return L.m("unbekannt");
+      }
     }
   }
 
