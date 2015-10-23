@@ -1,0 +1,144 @@
+<izpack:installation version="5.0"
+	xmlns:izpack="http://izpack.org/schema/installation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://izpack.org/schema/installation http://izpack.org/schema/5.0/izpack-installation-5.0.xsd">
+
+	<info>
+		<appname>WollMux</appname>
+		<appversion>@{project.version}</appversion>
+		<appsubpath>WollMux</appsubpath>
+		<javaversion>1.6</javaversion>
+	</info>
+
+	<resources>
+		<res id="userInputSpec.xml" src="userInputSpec.xml" parse="yes"
+			type="xml" />
+	</resources>
+
+	<conditions>
+		<condition type="exists" id="hkcuOOoExists">
+			<variable>hkcuOOo</variable>
+		</condition>
+		<condition type="exists" id="hklmOOoExists">
+			<variable>hklmOOo</variable>
+		</condition>
+		<condition type="exists" id="hkcuOOExists">
+			<variable>hkcuOO</variable>
+		</condition>
+		<condition type="exists" id="hklmOOExists">
+			<variable>hklmOO</variable>
+		</condition>
+		<condition type="exists" id="hkcuLOExists">
+			<variable>hkcuLO</variable>
+		</condition>
+		<condition type="exists" id="hklmLOExists">
+			<variable>hklmLO</variable>
+		</condition>
+		<condition type="exists" id="oooPathExists">
+			<variable>oooPath</variable>
+		</condition>
+		<condition type="variable" id="isLocal">
+			<name>localSwitch</name>
+			<value>true</value>
+		</condition>
+	</conditions>
+
+	<dynamicvariables>
+		<variable name="hkcuOOo" checkonce="true"
+			regkey="HKCU\\Software\\OpenOffice.org\\UNO\\InstallPath" regvalue="" />
+		<variable name="hklmOOo" checkonce="true"
+			regkey="HKLM\\Software\\OpenOffice.org\\UNO\\InstallPath" regvalue="" />
+		<variable name="hkcuOO" checkonce="true"
+			regkey="HKCU\\Software\\OpenOffice\\UNO\\InstallPath" regvalue="" />
+		<variable name="hklmOO" checkonce="true"
+			regkey="HKLM\\Software\\OpenOffice.org\\UNO\\InstallPath" regvalue="" />
+		<variable name="hkcuLO" checkonce="true"
+			regkey="HKCU\\Software\\LibreOffice\\UNO\\InstallPath" regvalue="" />
+		<variable name="hklmLO" checkonce="true"
+			regkey="HKLM\\Software\\LibreOffice\\UNO\\InstallPath" regvalue="" />
+
+		<variable name="oooPath" value="${hkcuOOo}" condition="hkcuOOoExists" />
+		<variable name="oooPath" value="${hklmOOo}" condition="hklmOOoExists" />
+		<variable name="oooPath" value="${hkcuOO}" condition="hkcuOOExists" />
+		<variable name="oooPath" value="${hklmOO}" condition="hklmOOExists" />
+		<variable name="oooPath" value="${hkcuLO}" condition="hkcuLOExists" />
+		<variable name="oooPath" value="${hklmLO}" condition="hklmLOExists" />
+
+		<variable name="localSwitch" value="${SYSTEM[local]}" />
+		<variable name="sharedSwitch" value="--shared" />
+		<variable name="sharedSwitch" value="" condition="isLocal" />
+	</dynamicvariables>
+
+	<locale>
+		<langpack iso3="deu" />
+		<langpack iso3="eng" />
+	</locale>
+
+	<guiprefs width="800" height="600" resizable="no">
+		<!-- <splash>images/peas_load.gif</splash> -->
+		<!-- <laf name="substance"> -->
+		<!-- <os family="windows" /> -->
+		<!-- <os family="unix" /> -->
+		<!-- <param name="variant" value="mist-silver" /> -->
+		<!-- </laf> -->
+		<!-- <laf name="substance"> -->
+		<!-- <os family="mac" /> -->
+		<!-- <param name="variant" value="mist-aqua" /> -->
+		<!-- </laf> -->
+		<modifier key="useHeadingPanel" value="yes" />
+	</guiprefs>
+
+	<panels>
+		<panel classname="TargetPanel" />
+		<panel classname="PacksPanel" />
+		<panel classname="UserInputPanel" id="panel1" />
+		<panel classname="InstallPanel" />
+		<panel classname="FinishPanel" />
+	</panels>
+
+	<packs>
+		<pack name="WollMux" required="yes">
+			<description>Installiert WollMux auf der Festplatte.</description>
+			<fileset dir="." targetdir="${INSTALL_PATH}" override="true">
+				<exclude name="*.sh" />
+				<exclude name="*.bat" />
+			</fileset>
+		</pack>
+		<!-- Windows -->
+		<pack name="Extension installieren" required="no" preselected="yes" condition="oooPathExists">
+			<description>Installiert die WollMux-Extension in OpenOffice/LibreOffice.</description>
+			<os family="windows" />
+			<fileset dir="." targetdir="${INSTALL_PATH}" override="true">
+				<include name="*.bat" />
+			</fileset>
+			<!-- Beenden des soffice-Prozess' -->
+			<executable targetfile="${INSTALL_PATH}/TerminateOOo.jar"
+				type="jar" stage="postinstall" />
+			<parsable targetfile="${INSTALL_PATH}/remove.bat" />
+			<executable targetfile="${INSTALL_PATH}/remove.bat" type="bin"
+				stage="postinstall" failure="warn" />
+			<os family="windows" />
+			<parsable targetfile="${INSTALL_PATH}/add.bat" />
+			<os family="windows" />
+			<executable targetfile="${INSTALL_PATH}/add.bat" type="bin"
+				stage="postinstall" failure="warn" />
+		</pack>
+		<!-- Un*x/Mac -->
+		<pack name="Extension installieren" required="no" preselected="yes">
+			<description>Installiert die WollMux-Extension in OpenOffice/LibreOffice.</description>
+			<os family="mac" />
+			<os family="unix" />
+			<fileset dir="." targetdir="${INSTALL_PATH}" override="true">
+				<include name="*.sh" />
+			</fileset>
+			<!-- Beenden des soffice-Prozess' -->
+			<executable targetfile="${INSTALL_PATH}/TerminateOOo.jar"
+				type="jar" stage="postinstall" />
+			<executable targetfile="${INSTALL_PATH}/remove.sh" type="bin"
+				stage="postinstall" failure="warn" />
+			<parsable targetfile="${INSTALL_PATH}/add.sh" />
+			<executable targetfile="${INSTALL_PATH}/add.sh" type="bin"
+				stage="postinstall" failure="warn" />
+		</pack>
+	</packs>
+
+</izpack:installation>                     
