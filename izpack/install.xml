@@ -4,15 +4,43 @@
 
 	<info>
 		<appname>WollMux</appname>
-		<appversion>@{project.version}</appversion>
+		<appversion>${project.version}</appversion>
 		<appsubpath>WollMux</appsubpath>
 		<javaversion>1.6</javaversion>
+		<run-privileged condition="izpack.windowsinstall" />
 	</info>
 
 	<resources>
+		<res id="CustomLangPack.xml_eng" src="customLangPack.xml_eng" />
+		<res id="CustomLangPack.xml_deu" src="customLangPack.xml_deu" />
+
 		<res id="userInputSpec.xml" src="userInputSpec.xml" parse="yes"
 			type="xml" />
 	</resources>
+
+	<natives>
+		<native type="3rdparty" name="COIOSHelper.dll" stage="uninstall">
+			<os family="windows" />
+			<os arch="x86" />
+		</native>
+		<native type="3rdparty" name="COIOSHelper_x64.dll" stage="uninstall">
+			<os family="windows" />
+			<os arch="amd64" />
+		</native>
+		<native type="izpack" name="ShellLink.dll" stage="install">
+			<os family="windows" />
+			<os arch="x86" />
+		</native>
+		<native type="izpack" name="ShellLink_x64.dll" stage="install">
+			<os family="windows" />
+			<os arch="amd64" />
+		</native>
+	</natives>
+
+	<listeners>
+		<listener classname="RegistryInstallerListener" stage="install" />
+		<listener classname="RegistryUninstallerListener" stage="uninstall" />
+	</listeners>
 
 	<conditions>
 		<condition type="exists" id="hkcuOOoExists">
@@ -40,21 +68,33 @@
 			<name>localSwitch</name>
 			<value>true</value>
 		</condition>
+		<condition type="variable" id="is64bit">
+			<name>os_arch</name>
+			<value>amd64</value>
+		</condition>
+		<condition type="exists" id="isOfficeRunning">
+			<variable>officeRunning</variable>
+		</condition>
+		<condition type="or" id="allowInstall">
+			<condition type="ref" refid="!isOfficeRunning" />
+			<condition type="ref" refid="!is64bit" />
+		</condition>
 	</conditions>
 
 	<dynamicvariables>
 		<variable name="hkcuOOo" checkonce="true"
-			regkey="HKCU\\Software\\OpenOffice.org\\UNO\\InstallPath" regvalue="" />
+			regkey="HKCU\Software\OpenOffice.org\UNO\InstallPath" regvalue="" />
 		<variable name="hklmOOo" checkonce="true"
-			regkey="HKLM\\Software\\OpenOffice.org\\UNO\\InstallPath" regvalue="" />
+			regkey="HKLM\Software\OpenOffice.org\UNO\InstallPath" regvalue="" />
 		<variable name="hkcuOO" checkonce="true"
-			regkey="HKCU\\Software\\OpenOffice\\UNO\\InstallPath" regvalue="" />
+			regkey="HKCU\Software\OpenOffice\UNO\InstallPath" regvalue="" />
 		<variable name="hklmOO" checkonce="true"
-			regkey="HKLM\\Software\\OpenOffice.org\\UNO\\InstallPath" regvalue="" />
+			regkey="HKLM\Software\OpenOffice.org\UNO\InstallPath" regvalue="" />
 		<variable name="hkcuLO" checkonce="true"
-			regkey="HKCU\\Software\\LibreOffice\\UNO\\InstallPath" regvalue="" />
+			regkey="HKCU\Software\LibreOffice\UNO\InstallPath" regvalue="" />
 		<variable name="hklmLO" checkonce="true"
-			regkey="HKLM\\Software\\LibreOffice\\UNO\\InstallPath" regvalue="" />
+			regkey="HKEY_LOCAL_MACHINE\Software\LibreOffice\UNO\InstallPath"
+			regvalue="@" />
 
 		<variable name="oooPath" value="${hkcuOOo}" condition="hkcuOOoExists" />
 		<variable name="oooPath" value="${hklmOOo}" condition="hklmOOoExists" />
@@ -66,6 +106,11 @@
 		<variable name="localSwitch" value="${SYSTEM[local]}" />
 		<variable name="sharedSwitch" value="--shared" />
 		<variable name="sharedSwitch" value="" condition="isLocal" />
+
+		<variable name="os_arch" value="${SYSTEM[os.arch]}" />
+		<variable name="officeRunning"
+			executable="&quot;tasklist /FI &quot;IMAGENAME eq soffice.exe&quot; | find /i &quot;soffice.exe&quot;&quot;"
+			type="shell" stderr="true" />
 	</dynamicvariables>
 
 	<locale>
@@ -87,6 +132,11 @@
 		<modifier key="useHeadingPanel" value="yes" />
 	</guiprefs>
 
+	<installerrequirements>
+		<installerrequirement condition="allowInstall"
+			message="Office muss vor der Installtion geschlossen werden." />
+	</installerrequirements>
+
 	<panels>
 		<panel classname="TargetPanel" />
 		<panel classname="PacksPanel" />
@@ -102,17 +152,25 @@
 				<exclude name="*.sh" />
 				<exclude name="*.bat" />
 			</fileset>
+			<fileset dir="../misc" targetdir="${INSTALL_PATH}" override="true">
+				<include name="wollmux.ico" />
+			</fileset>			
 		</pack>
 		<!-- Windows -->
-		<pack name="Extension installieren" required="no" preselected="yes" condition="oooPathExists">
-			<description>Installiert die WollMux-Extension in OpenOffice/LibreOffice.</description>
+		<pack name="Extension installieren (Windows)" required="no"
+			preselected="yes" condition="oooPathExists">
+			<description>Installiert die WollMux-Extension in
+				OpenOffice/LibreOffice. (Windows)
+			</description>
 			<os family="windows" />
 			<fileset dir="." targetdir="${INSTALL_PATH}" override="true">
 				<include name="*.bat" />
 			</fileset>
 			<!-- Beenden des soffice-Prozess' -->
 			<executable targetfile="${INSTALL_PATH}/TerminateOOo.jar"
-				type="jar" stage="postinstall" />
+				type="jar" stage="postinstall" condition="isOfficeRunning">
+				<os arch="x86" />
+			</executable>
 			<parsable targetfile="${INSTALL_PATH}/remove.bat" />
 			<executable targetfile="${INSTALL_PATH}/remove.bat" type="bin"
 				stage="postinstall" failure="warn" />
@@ -122,9 +180,19 @@
 			<executable targetfile="${INSTALL_PATH}/add.bat" type="bin"
 				stage="postinstall" failure="warn" />
 		</pack>
+		<pack name="Startmenü-Eintrag" required="no" preselected="yes">
+			<description>Erstellt eine Verknüpfung im Startmenü.</description>
+			<os family="windows" />
+		</pack>
+		<pack name="Desktop-Verknüpfung" required="no" preselected="yes">
+			<description>Erstellt eine Verknüpfung auf dem Desktop.</description>
+			<os family="windows" />
+		</pack>
 		<!-- Un*x/Mac -->
 		<pack name="Extension installieren" required="no" preselected="yes">
-			<description>Installiert die WollMux-Extension in OpenOffice/LibreOffice.</description>
+			<description>Installiert die WollMux-Extension in
+				OpenOffice/LibreOffice.
+			</description>
 			<os family="mac" />
 			<os family="unix" />
 			<fileset dir="." targetdir="${INSTALL_PATH}" override="true">
@@ -132,7 +200,9 @@
 			</fileset>
 			<!-- Beenden des soffice-Prozess' -->
 			<executable targetfile="${INSTALL_PATH}/TerminateOOo.jar"
-				type="jar" stage="postinstall" />
+				type="jar" stage="postinstall" condition="isOfficeRunning">
+				<os arch="x86" />
+			</executable>
 			<executable targetfile="${INSTALL_PATH}/remove.sh" type="bin"
 				stage="postinstall" failure="warn" />
 			<parsable targetfile="${INSTALL_PATH}/add.sh" />
@@ -140,5 +210,31 @@
 				stage="postinstall" failure="warn" />
 		</pack>
 	</packs>
+
+	<shortcuts>
+		<skipIfNotSupported />
+		<programGroup defaultName="Landeshauptstadt München\WollMux"
+			location="startMenu" />
+		<shortcut name="WollMux"
+			target="$INSTALL_PATH\wollmuxbar.exe"
+			commandLine="" workingDirectory="$INSTALL_PATH"
+			description="WollMux - das Briefkopf- und Formularsystem" iconFile="$INSTALL_PATH\wollmux.ico"
+			iconIndex="0" initialState="normal"
+			programGroup="yes" desktop="no" applications="no"
+			startMenu="no" startup="no">
+
+			<createForPack name="Startmenü-Eintrag" />
+		</shortcut>
+		<shortcut name="WollMux"
+			target="$INSTALL_PATH\wollmuxbar.exe"
+			commandLine="" workingDirectory="$INSTALL_PATH"
+			description="WollMux - das Briefkopf- und Formularsystem" iconFile="$INSTALL_PATH\wollmux.ico"
+			iconIndex="0" initialState="normal"
+			programGroup="no" desktop="yes" applications="no"
+			startMenu="no" startup="no">
+
+			<createForPack name="Desktop-Verknüpfung" />
+		</shortcut>
+	</shortcuts>
 
 </izpack:installation>                     
