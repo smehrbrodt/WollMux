@@ -16,6 +16,8 @@
 
 		<res id="userInputSpec.xml" src="userInputSpec.xml" parse="yes"
 			type="xml" />
+		<res id="shortcutSpec.xml" src="shortcutSpec.xml" parse="yes"
+			type="xml" />
 	</resources>
 
 	<natives>
@@ -142,6 +144,9 @@
 		<panel classname="PacksPanel" />
 		<panel classname="UserInputPanel" id="panel1" />
 		<panel classname="InstallPanel" />
+		<panel classname="ShortcutPanel">
+			<os family="windows" />
+		</panel>
 		<panel classname="FinishPanel" />
 	</panels>
 
@@ -154,7 +159,7 @@
 			</fileset>
 			<fileset dir="../misc" targetdir="${INSTALL_PATH}" override="true">
 				<include name="wollmux.ico" />
-			</fileset>			
+			</fileset>
 		</pack>
 		<!-- Windows -->
 		<pack name="Extension installieren (Windows)" required="no"
@@ -173,20 +178,12 @@
 			</executable>
 			<parsable targetfile="${INSTALL_PATH}/remove.bat" />
 			<executable targetfile="${INSTALL_PATH}/remove.bat" type="bin"
-				stage="postinstall" failure="warn" />
+				stage="postinstall" failure="warn" keep="true" />
 			<os family="windows" />
 			<parsable targetfile="${INSTALL_PATH}/add.bat" />
 			<os family="windows" />
 			<executable targetfile="${INSTALL_PATH}/add.bat" type="bin"
-				stage="postinstall" failure="warn" />
-		</pack>
-		<pack name="Startmenü-Eintrag" required="no" preselected="yes">
-			<description>Erstellt eine Verknüpfung im Startmenü.</description>
-			<os family="windows" />
-		</pack>
-		<pack name="Desktop-Verknüpfung" required="no" preselected="yes">
-			<description>Erstellt eine Verknüpfung auf dem Desktop.</description>
-			<os family="windows" />
+				stage="postinstall" failure="warn" keep="true" />
 		</pack>
 		<!-- Un*x/Mac -->
 		<pack name="Extension installieren" required="no" preselected="yes">
@@ -210,31 +207,5 @@
 				stage="postinstall" failure="warn" />
 		</pack>
 	</packs>
-
-	<shortcuts>
-		<skipIfNotSupported />
-		<programGroup defaultName="Landeshauptstadt München\WollMux"
-			location="startMenu" />
-		<shortcut name="WollMux"
-			target="$INSTALL_PATH\wollmuxbar.exe"
-			commandLine="" workingDirectory="$INSTALL_PATH"
-			description="WollMux - das Briefkopf- und Formularsystem" iconFile="$INSTALL_PATH\wollmux.ico"
-			iconIndex="0" initialState="normal"
-			programGroup="yes" desktop="no" applications="no"
-			startMenu="no" startup="no">
-
-			<createForPack name="Startmenü-Eintrag" />
-		</shortcut>
-		<shortcut name="WollMux"
-			target="$INSTALL_PATH\wollmuxbar.exe"
-			commandLine="" workingDirectory="$INSTALL_PATH"
-			description="WollMux - das Briefkopf- und Formularsystem" iconFile="$INSTALL_PATH\wollmux.ico"
-			iconIndex="0" initialState="normal"
-			programGroup="no" desktop="yes" applications="no"
-			startMenu="no" startup="no">
-
-			<createForPack name="Desktop-Verknüpfung" />
-		</shortcut>
-	</shortcuts>
 
 </izpack:installation>                     
