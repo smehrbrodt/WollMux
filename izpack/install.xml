@@ -18,6 +18,7 @@
 			type="xml" />
 		<res id="shortcutSpec.xml" src="shortcutSpec.xml" parse="yes"
 			type="xml" />
+		<res id="Installer.image" src="../misc/wollmux_welcome.png" />
 	</resources>
 
 	<natives>
@@ -120,7 +121,7 @@
 		<langpack iso3="eng" />
 	</locale>
 
-	<guiprefs width="800" height="600" resizable="no">
+	<guiprefs width="800" height="480" resizable="no">
 		<!-- <splash>images/peas_load.gif</splash> -->
 		<!-- <laf name="substance"> -->
 		<!-- <os family="windows" /> -->
