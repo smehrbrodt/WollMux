@@ -140,6 +140,7 @@
 	</installerrequirements>
 
 	<panels>
+		<panel classname="HelloPanel" />
 		<panel classname="TargetPanel" />
 		<panel classname="PacksPanel" />
 		<panel classname="UserInputPanel" id="panel1" />
