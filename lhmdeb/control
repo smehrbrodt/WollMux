@@ -8,7 +8,7 @@ Standards-Version: 3.8.0
 Homepage: http://www.wollmux.org
 
 Package: libreoffice4.1-wollmux
-Architecture: all
+Architecture: i386
 Depends: ${misc:Depends}, default-jre, libreoffice4.1-writer, libreoffice4.1-debian-menus
 Replaces: libreoffice-wollmux (<< ${binary:Version})
 Breaks: libreoffice-wollmux (<< ${binary:Version})
@@ -31,7 +31,7 @@ Description: WollMux extension for LibreOffice
     functionality (e.g. auto-computed fields) and the custom print plugins.
 
 Package: libreoffice5.0-wollmux
-Architecture: all
+Architecture: i386
 Depends: ${misc:Depends}, default-jre, libreoffice5.0-writer, libreoffice5.0-debian-menus
 Conflicts: libreoffice-wollmux (<< ${binary:Version})
 Replaces: libreoffice-wollmux (<< ${binary:Version})
@@ -54,7 +54,7 @@ Description: WollMux extension for LibreOffice
     functionality (e.g. auto-computed fields) and the custom print plugins.
 
 Package: wollmuxbar
-Architecture: all
+Architecture: i386
 Depends: libreoffice4.1-wollmux (= ${binary:Version}) | libreoffice5.0-wollmux (= ${binary:Version})
 Conflicts: wollmux (<< ${binary:Version})
 Replaces: wollmux (<< ${binary:Version})
@@ -64,13 +64,13 @@ Description: Standalone toolbar for WollMux
  LibreOffice / Apache OpenOffice / OpenOffice.org Writer.
 
 Package: wollmux
-Architecture: all
+Architecture: i386
 Depends: wollmuxbar (= ${binary:Version})
 Description: Transitional package for WollMux Bar
  Ease transition from wollmux to wollmuxbar package
 
 Package: libreoffice-wollmux
 Depends: libreoffice4.1-wollmux (= ${binary:Version}) | libreoffice5.0-wollmux (= ${binary:Version})
-Architecture: all
+Architecture: i386
 Description: transitional dummy package
  This is a transitional dummy package. It can safely be removed.
