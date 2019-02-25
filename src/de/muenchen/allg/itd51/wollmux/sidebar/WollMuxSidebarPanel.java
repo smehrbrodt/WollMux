@@ -24,7 +24,8 @@ public class WollMuxSidebarPanel extends ComponentBase implements XUIElement
       String resourceUrl)
   {
     this.resourceUrl = resourceUrl;
-    panel = new WollMuxSidebarContent(context, parentWindow);
+    //panel = new WollMuxSidebarContent(context, parentWindow);
+    panel = new FormGUISidebar(context, parentWindow);
   }
 
   @Override
