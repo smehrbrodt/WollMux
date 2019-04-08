@@ -26,6 +26,7 @@ import com.sun.star.beans.NamedValue;
 import com.sun.star.beans.XPropertySet;
 import com.sun.star.container.XNameContainer;
 import com.sun.star.lang.DisposedException;
+import com.sun.star.lang.WrappedTargetException;
 import com.sun.star.lang.XMultiServiceFactory;
 import com.sun.star.ui.LayoutSize;
 import com.sun.star.ui.XSidebarPanel;
@@ -90,25 +91,19 @@ public class FormGUISidebar implements XToolPanel, XSidebarPanel
       window = UNO.XWindow(dialogControl);
       window.setEnable(true);
       window.setVisible(true);
-
-      this.parentWindow.setVisible(true);
-
+      
       layout = new SimpleDialogLayout(window);
 
-      // layout.addControlsToList(addBottomControls());
-      // layout.addControlsToList(addTabControl3());
-
-      // addCibTabTest();
-
-      addTabControl();
-
+      //addCibTabTest(); // ok
+      layout.addControlsToList(addTabControl4()); // nicht sichtbar, keine exception
+      
       window.setVisible(true);
     }
 
     layout.draw();
 
   }
-
+  
   private void addCibTabTest()
   {
 
@@ -132,25 +127,31 @@ public class FormGUISidebar implements XToolPanel, XSidebarPanel
       // create the tab pages container model
       Object tabPagesModel = UNO.xMSF
           .createInstance("com.sun.star.awt.tab.UnoControlTabPageContainerModel");
-      // xNameContainer.insertByName("tab", tabPagesModel);
+      xNameContainer.insertByName("tab", tabPagesModel);
       XPropertySet xPropSet = UnoRuntime.queryInterface(XPropertySet.class, tabPagesModel);
 
-      xPropSet.setPropertyValue("Width", 100);
-      xPropSet.setPropertyValue("Height", 100);
+      //xPropSet.setPropertyValue("Width", 100);
+      //xPropSet.setPropertyValue("Height", 100);
 
       XTabPageContainerModel xTabPagesModel = UnoRuntime
           .queryInterface(XTabPageContainerModel.class, tabPagesModel);
 
       // add the first page
-      XTabPageModel xTabPageModel1 = xTabPagesModel.createTabPage((short) 1);
-      xTabPageModel1.setTitle("Page 1");
-      xTabPagesModel.insertByIndex(0, xTabPageModel1);
-
-      // add the second page
-      XTabPageModel xTabPageModel2 = xTabPagesModel.createTabPage((short) 2);
-      xTabPageModel2.setTitle("Page 2");
-      xTabPagesModel.insertByIndex(1, xTabPageModel2);
-
+//      XTabPageModel xTabPageModel1 = xTabPagesModel.createTabPage((short) 1);
+//      xTabPageModel1.setTitle("Page 1");
+//      xTabPagesModel.insertByIndex(0, xTabPageModel1);
+//
+//      // add the second page
+//      XTabPageModel xTabPageModel2 = xTabPagesModel.createTabPage((short) 2);
+//      xTabPageModel2.setTitle("Page 2");
+//      xTabPagesModel.insertByIndex(1, xTabPageModel2);
+      
+      for (int i = 1; i < 15; i++) {
+        XTabPageModel xTabPageModel2 = xTabPagesModel.createTabPage((short) i);
+        xTabPageModel2.setTitle("Page " + i);
+        xTabPagesModel.insertByIndex(i - 1, xTabPageModel2);
+      }
+      
       // execute the dialog
       xDialog.execute();
     } catch (Exception e)
@@ -166,61 +167,55 @@ public class FormGUISidebar implements XToolPanel, XSidebarPanel
     List<ControlProperties> tabControls = new ArrayList<>();
 
     Object tabPagesModel = UNO.createUNOService("com.sun.star.awt.tab.UnoControlTabPage");
-    XTabPage xTabPage = UnoRuntime.queryInterface(XTabPage.class, tabPagesModel);
-    XTabPageContainer xTabPageContainer = UnoRuntime.queryInterface(XTabPageContainer.class, xTabPage);
-    XControl xControl = UnoRuntime.queryInterface(XControl.class, tabPagesModel);
+    Object tabPagesContainerModel = UNO
+        .createUNOService("com.sun.star.awt.tab.UnoControlTabPageContainerModel");
+    XTabPageContainerModel xTabPageContainerModel = UnoRuntime
+        .queryInterface(XTabPageContainerModel.class, tabPagesContainerModel);
 
-    ControlProperties controlProperties = new ControlProperties(ControlType.EDIT, "tabContainer");
-    controlProperties.setXControl(xControl);
-
-    tabControls.add(controlProperties);
-
-    return new ControlModel(Orientation.HORIZONTAL, Align.NONE, tabControls, Optional.empty());
-  }
-
-  private ControlModel addTabControl3()
-  {
-    List<ControlProperties> tabControls = new ArrayList<>();
+    XTabPageModel xTabPageModel1 = xTabPageContainerModel.createTabPage((short) 1);
+    xTabPageModel1.setTitle("Page1");
+    xTabPageModel1.setEnabled(true);
+    
+    XTabPageModel xTabPageModel2 = xTabPageContainerModel.createTabPage((short) 2);
+    xTabPageModel2.setTitle("Page2");
+    xTabPageModel2.setEnabled(true);
 
     try
     {
-      XControlModel containerModel = dialogControl.getModel();
-      XControlContainer container = layout.getControlContainer();
-
-      Object tabPagesModel = UNO
-          .createUNOService("com.sun.star.awt.tab.UnoControlTabPageContainerModel");
-      XTabPageContainerModel xTabPageContainerModel = UnoRuntime
-          .queryInterface(XTabPageContainerModel.class, tabPagesModel);
-      // XTabPageContainer ccp = UnoRuntime.queryInterface(XTabPageContainer.class,
-      // xTabPageContainerModel);
-
-      // page1
-      XTabPageModel xTabPageModel1 = xTabPageContainerModel.createTabPage((short) 1);
-      xTabPageModel1.setTitle("Page1");
-      xTabPageModel1.setEnabled(true);
       xTabPageContainerModel.insertByIndex(0, xTabPageModel1);
-
-      // page2
-      XTabPageModel xTabPageModel2 = xTabPageContainerModel.createTabPage((short) 2);
-      xTabPageModel2.setTitle("Page2");
-      xTabPageModel2.setEnabled(true);
       xTabPageContainerModel.insertByIndex(1, xTabPageModel2);
-
-      XControlModel xControlModel = UnoRuntime.queryInterface(XControlModel.class, tabPagesModel);
-
-      Object tabPageContainer = UNO
-          .createUNOService("com.sun.star.awt.tab.UnoControlTabPageContainer");
-      XControl xTabPageControl = UnoRuntime.queryInterface(XControl.class, tabPageContainer);
-      xTabPageControl.setModel(xControlModel); //UnknownPropertyException in Job.java
-
-      ControlProperties controlProperties = new ControlProperties(ControlType.EDIT, "tabContainer");
-      controlProperties.setXControl(xTabPageControl);
-
-      tabControls.add(controlProperties);
-    } catch (Exception ex)
+    } catch (com.sun.star.lang.IllegalArgumentException e)
     {
-
+      // TODO Auto-generated catch block
+      e.printStackTrace();
+    } catch (com.sun.star.lang.IndexOutOfBoundsException e)
+    {
+      // TODO Auto-generated catch block
+      e.printStackTrace();
+    } catch (WrappedTargetException e)
+    {
+      // TODO Auto-generated catch block
+      e.printStackTrace();
     }
+    
+    Object tabController = UNO.createUNOService("com.sun.star.awt.TabController");
+    XTabController xTabController = UnoRuntime.queryInterface(XTabController.class, tabController);
+
+    Object tabControllerModel = UNO.createUNOService("com.sun.star.awt.TabControllerModel");
+    XTabControllerModel tabCModel = UnoRuntime.queryInterface(XTabControllerModel.class,
+        tabControllerModel);
+    xTabController.setModel(tabCModel);
+    xTabController.setContainer(UnoRuntime.queryInterface(XControlContainer.class, dialogControl));
+    
+    XUnoControlContainer xcc = UnoRuntime.queryInterface(XUnoControlContainer.class,
+        dialogControl);
+    xcc.addTabController(xTabController);
+    xcc.getTabControllers();
+
+    ControlProperties controlProperties = new ControlProperties(ControlType.EDIT, "tabContainer");
+    controlProperties.setXControl(UNO.XControl(xcc));
+
+    tabControls.add(controlProperties);
 
     return new ControlModel(Orientation.HORIZONTAL, Align.NONE, tabControls, Optional.empty());
   }
@@ -346,35 +341,36 @@ public class FormGUISidebar implements XToolPanel, XSidebarPanel
 
     
     XPropertySet propSet = UNO.XPropertySet(tab1);
-    // try
-    // {
-    // // tabPageContainerModel.loadTabPage((short) 11,
-    // // "vnd.sun.star.script:WollMux.email_auth?location=application");
-    //
-    // tabPageContainerModel.insertByIndex(0, tab1);
-    // tabPageContainerModel.insertByIndex(1, tab2);
-    // } catch (IllegalArgumentException e)
-    // {
-    // // TODO Auto-generated catch block
-    // e.printStackTrace();
-    // } catch (IndexOutOfBoundsException e)
-    // {
-    // // TODO Auto-generated catch block
-    // e.printStackTrace();
-    // } catch (com.sun.star.lang.IllegalArgumentException e)
-    // {
-    // // TODO Auto-generated catch block
-    // e.printStackTrace();
-    // } catch (com.sun.star.lang.IndexOutOfBoundsException e)
-    // {
-    // // TODO Auto-generated catch block
-    // e.printStackTrace();
-    // } catch (WrappedTargetException e)
-    // {
-    // // TODO Auto-generated catch block
-    // e.printStackTrace();
-    // }
-
+     try
+     {
+     // tabPageContainerModel.loadTabPage((short) 11,
+     // "vnd.sun.star.script:WollMux.email_auth?location=application");
+    
+       XControlContainer xContainer = UnoRuntime.queryInterface(XControlContainer.class, tabPageContainer);
+     tabPageContainerModel.insertByIndex(0, tab1);
+     tabPageContainerModel.insertByIndex(1, tab2);
+     } catch (IllegalArgumentException e)
+     {
+     // TODO Auto-generated catch block
+     e.printStackTrace();
+     } catch (IndexOutOfBoundsException e)
+     {
+     // TODO Auto-generated catch block
+     e.printStackTrace();
+     } catch (com.sun.star.lang.IllegalArgumentException e)
+     {
+     // TODO Auto-generated catch block
+     e.printStackTrace();
+     } catch (com.sun.star.lang.IndexOutOfBoundsException e)
+     {
+     // TODO Auto-generated catch block
+     e.printStackTrace();
+     } catch (WrappedTargetException e)
+    {
+      // TODO Auto-generated catch block
+      e.printStackTrace();
+    }
+     
     Object tabController = UNO.createUNOService("com.sun.star.awt.TabController");
     XTabController xTabController = UnoRuntime.queryInterface(XTabController.class, tabController);
 
@@ -382,8 +378,7 @@ public class FormGUISidebar implements XToolPanel, XSidebarPanel
     XTabControllerModel tabCModel = UnoRuntime.queryInterface(XTabControllerModel.class,
         tabControllerModel);
     xTabController.setModel(tabCModel);
-    xTabController
-        .setContainer(UnoRuntime.queryInterface(XControlContainer.class, tabPageContainer));
+    xTabController.setContainer(UnoRuntime.queryInterface(XControlContainer.class, tabPageContainer));
     // tabCModel.setControlModels(new XControlModel[] { xControl.getModel() });
 
     // XControl xUnoCC = null;
